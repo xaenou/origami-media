@@ -21,7 +21,7 @@ class Config(BaseProxyConfig):
     "other": {}
     }
 
-    def do_update(self, helper: ConfigUpdateHelper) -> None:
+    def do_update(self, helper: ConfigUpdateHelper):
         for key in self.DEFAULTS.keys():
             helper.copy(key)
 
@@ -47,7 +47,7 @@ class Config(BaseProxyConfig):
 
 
 class OrigamiVideo(Plugin):
-    async def start(self) -> None:
+    async def start(self):
         self.log.info(f"Starting Origami Video")
         await super().start()
         self.config.load_and_update()
@@ -85,7 +85,7 @@ class OrigamiVideo(Plugin):
         except asyncio.QueueFull:
             self.log.warning("Message queue is full. Dropping incoming message.")
 
-    async def _message_worker(self):
+    async def _message_worker(self) -> None:
         while True:
             try:
                 event = await self.event_queue.get()
@@ -104,7 +104,7 @@ class OrigamiVideo(Plugin):
             finally:
                 self.event_queue.task_done()
 
-    async def _pipeline_worker(self):
+    async def _pipeline_worker(self) -> None:
         while True:
             try:
                 item = await self.valid_urls.get()
@@ -132,9 +132,9 @@ class OrigamiVideo(Plugin):
         self.log.info("All workers stopped cleanly.")
         await super().stop()
 
-    @command.new(name="ov", help="Help command.")
-    async def ov(self, event: MessageEvent):
-        if not self.config.meta.get("enable_active", False):  # type: ignore
+    @command.new(name="ov")
+    async def ov(self, event: MessageEvent) -> None:
+        if not self.config.meta.get("enable_active", False):
             await event.respond("Active commands are currently disabled.")
             self.log.info("Active commands are disabled. Ignoring `dl` command.")
             return
@@ -158,8 +158,8 @@ class OrigamiVideo(Plugin):
 
     @ov.subcommand(name="dl", help="Downloads and posts a video")
     @command.argument(name="url", pass_raw=True)
-    async def dl(self, event: MessageEvent, url: str):
-        if not self.config.meta.get("enable_active", False):  # type: ignore
+    async def dl(self, event: MessageEvent, url: str) -> None:
+        if not self.config.meta.get("enable_active", False):
             await event.respond("Active commands are currently disabled.")
             self.log.info("Active commands are disabled. Ignoring `dl` command.")
             return
@@ -167,8 +167,8 @@ class OrigamiVideo(Plugin):
         await self.media_pipeline.process(event=event, url=url)
 
     @ov.subcommand(name="check", help="Checks for dependencies.")
-    async def check(self, event: MessageEvent):
-        if not self.config.meta.enable_active.get("enable_active", False):  # type: ignore
+    async def check(self, event: MessageEvent) -> None:
+        if not self.config.meta.get("enable_active", False):
             await event.respond("Active commands are currently disabled.")
             self.log.info("Active commands are disabled. Ignoring `check` command.")
             return
