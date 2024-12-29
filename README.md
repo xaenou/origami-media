@@ -8,7 +8,6 @@ Almost everything is configurable and can be adjusted within the maubot manager 
 See base-config.yaml.
 
 - Queues
-- Concurrency
 - Streaming
 - Passive URL listening
 - URL cleaning
@@ -21,10 +20,12 @@ See base-config.yaml.
 
 ## Planned features
 
-- Disabling log types
-- Compatibility with yt-dlp python module
+- Concurrency
+- Disable by log type
+- yt-dlp python module compatibility
 - ffmpeg configuration
-- rate limiting
+- rate limits
 - timeout settings
 - output settings
 - live streams
+- documentation
