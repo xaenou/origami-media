@@ -18,6 +18,7 @@ class MediaPipeline:
     async def process(self, url, event):
         try:
             reaction_event_ID = await event.react(key="🔄")
+            room_event_ID = event.room_id
 
             result = await self.video_processor.process_url(url)
             video: Optional[VideoData] = result[0]
@@ -101,14 +102,8 @@ class MediaPipeline:
 
             await event.respond(content=content, reply=True)
             self.log.info("OrigamiVideo.dl: Video message sent successfully.")
-            reaction_event = await self.client.get_event(
-                event_id=reaction_event_ID, room_id=event.room_id
-            )
-            await reaction_event.redact()
+            self.client.redact(room_id=room_event_ID, event_id=reaction_event_ID)
 
         except Exception as e:
             self.log.exception(f"OrigamiVideo.dl: {e}")
-            reaction_event = await self.client.get_event(
-                event_id=reaction_event_ID, room_id=event.room_id
-            )
-            await reaction_event.redact()
+            self.client.redact(room_id=room_event_ID, event_id=reaction_event_ID)

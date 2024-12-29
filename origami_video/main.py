@@ -1,10 +1,10 @@
 import asyncio
 from typing import Any, Dict, Type, cast
 
-from maubot.handlers import command
+from maubot.handlers import command, event
 from maubot.matrix import MessageEvent
 from maubot.plugin_base import Plugin
-from mautrix.types.event import message
+from mautrix.types.event import message, EventType
 from mautrix.util.config import BaseProxyConfig, ConfigUpdateHelper
 
 from .dependency_handler import DependencyHandler
@@ -13,49 +13,53 @@ from .url_handler import UrlHandler
 
 
 class Config(BaseProxyConfig):
+    DEFAULTS = {
+    "whitelist": [],
+    "ytdlp": {},
+    "queue": {"max_size": 100},
+    "meta": {},
+    "other": {}
+    }
+
     def do_update(self, helper: ConfigUpdateHelper) -> None:
-        helper.copy("whitelist")
-        helper.copy("ytdlp")
-        helper.copy("queue")
-        helper.copy("meta")
-        helper.copy("other")
+        for key in self.DEFAULTS.keys():
+            helper.copy(key)
 
     @property
     def ytdlp(self) -> Dict[str, Any]:
-        return cast(Dict[str, Any], self.get("ytdlp", {}))
+        return cast(Dict[str, Any], self.get("ytdlp", self.DEFAULTS["ytdlp"]))
 
     @property
     def whitelist(self) -> list[str]:
-        return cast(list[str], self.get("whitelist", []))
+        return cast(list[str], self.get("whitelist", self.DEFAULTS["whitelist"]))
 
     @property
     def meta(self) -> Dict[str, Any]:
-        return cast(Dict[str, Any], self.get("meta", {}))
+        return cast(Dict[str, Any], self.get("meta", self.DEFAULTS["meta"]))
 
     @property
     def queue(self) -> Dict[str, Any]:
-        return cast(Dict[str, Any], self.get("queue", {}))
+        return cast(Dict[str, Any], self.get("queue", self.DEFAULTS["queue"]))
 
     @property
     def other(self) -> Dict[str, Any]:
-        return cast(Dict[str, Any], self.get("other", {}))
+        return cast(Dict[str, Any], self.get("other", self.DEFAULTS["other"]))
 
 
 class OrigamiVideo(Plugin):
     async def start(self) -> None:
         self.log.info(f"Starting Origami Video")
         await super().start()
-        self.config.load_and_update()  # type: ignore
+        self.config.load_and_update()
 
         self.dependency_handler = DependencyHandler(log=self.log)
         self.url_handler = UrlHandler(log=self.log, config=self.config)
         self.media_pipeline = MediaPipeline(
             log=self.log, client=self.client, config=self.config
         )
-        self.valid_urls = []
-        self.url_lock = asyncio.Lock()
+        self.valid_urls = asyncio.Queue()
         self.event_queue = asyncio.Queue(
-            maxsize=self.config.queue.get("max_size", 100)  # type: ignore
+            maxsize=self.config.queue.get("max_size", 100)
         )
 
         self.workers = [
@@ -67,11 +71,13 @@ class OrigamiVideo(Plugin):
     def get_config_class(cls) -> Type[BaseProxyConfig]:
         return Config
 
-    @command.passive(r"https?:\/\/[^\s.,!?]+", case_insensitive=True, multiple=True)
-    async def main(self, event: MessageEvent, val):
-        self.log.info(event.content.body, val)
-        if not self.config.meta.get("enable_passive", False):  # type: ignore
-            self.log.info("Passive command is currently disabled. Ignoring message.")
+    @event.on(EventType.ROOM_MESSAGE)
+    async def main(self, event: MessageEvent):
+        if not self.config.meta.get("enable_passive", False):
+            return
+        if not event.content.msgtype.is_text or event.sender is self.client.mxid or event.content.body.startswith("!"):
+            return
+        if "http" not in event.content.body or "www" not in event.content.body:
             return
         try:
             self.event_queue.put_nowait(event)
@@ -85,48 +91,44 @@ class OrigamiVideo(Plugin):
                 event = await self.event_queue.get()
                 valid_urls, event = await self.url_handler.process(event)
                 if valid_urls:
-                    async with self.url_lock:
-                        self.valid_urls.extend(
-                            [{"url": url, "event": event} for url in valid_urls]
-                        )
-                    self.log.info(f"Extracted and stored valid URLs: {valid_urls}")
+                    for url in valid_urls:
+                        await self.valid_urls.put((url, event))
+                    self.log.info(f"[Message Worker] Stored valid URLs: {valid_urls}")
                 else:
-                    self.log.info("No valid URLs found in the queued message.")
+                    self.log.info("[Message Worker] No valid URLs found.")
             except asyncio.CancelledError:
-                self.log.info("Message worker shutting down gracefully.")
+                self.log.info("[Message Worker] Shutting down gracefully.")
                 break
             except Exception as e:
-                self.log.error(f"Error in message processing: {e}")
+                self.log.error(f"[Message Worker] Error: {e}")
             finally:
                 self.event_queue.task_done()
 
     async def _pipeline_worker(self):
         while True:
-            await asyncio.sleep(0.1)
-            async with self.url_lock:
-                if self.valid_urls:
-                    item = self.valid_urls.pop(0)
-                    url = item["url"]
-                    event = item["event"]
-                else:
-                    continue
             try:
-                self.log.info(f"Sending URL to MediaPipeline: {url}")
+                item = await self.valid_urls.get()
+                url, event = item
+                self.log.info(f"[Pipeline Worker] Sending URL to MediaPipeline: {url}")
                 await self.media_pipeline.process(event=event, url=url)
             except asyncio.CancelledError:
-                self.log.info("Message worker shutting down gracefully.")
+                self.log.info("[Pipeline Worker] Shutting down gracefully.")
                 break
             except Exception as e:
-                self.log.error(f"Failed to process URL {url} in MediaPipeline: {e}")
+                self.log.error(f"[Pipeline Worker] Failed to process URL {url} in MediaPipeline: {e}")
+            finally:
+                self.valid_urls.task_done()
 
     async def stop(self) -> None:
         self.log.info("Shutting down workers...")
         for task in self.workers:
             task.cancel()
-        try:
-            await asyncio.gather(*self.workers, return_exceptions=True)
-        except asyncio.CancelledError:
-            self.log.info("Worker tasks were cancelled cleanly.")
+        
+        results = await asyncio.gather(*self.workers, return_exceptions=True)
+        for task, result in zip(self.workers, results):
+            if isinstance(result, Exception) and not isinstance(result, asyncio.CancelledError):
+                self.log.error(f"Task {task.get_name()} failed during shutdown: {result}")
+        
         self.log.info("All workers stopped cleanly.")
         await super().stop()
 
@@ -152,7 +154,6 @@ class OrigamiVideo(Plugin):
         )
 
         await event.respond(content)
-        self.log.info("OrigamiVideo.main: Help message sent successfully.")
         return
 
     @ov.subcommand(name="dl", help="Downloads and posts a video")
