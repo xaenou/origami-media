@@ -1,0 +1,11 @@
+id: net.origami.video
+version: 1.0.9
+modules:
+  - origami_video
+main_class: OrigamiVideo
+maubot: 0.1.0
+config: true
+extra_files:
+  - base-config.yaml
+  - LICENSE
+  - README.md

@@ -1,0 +1,37 @@
+meta:
+  enable_passive: true
+  enable_active: false
+  enable_censorship: false # wip
+
+whitelist:
+  - youtube.com
+  - youtu.be
+  - twitter.com
+  - x.com
+  - rumble.com
+  - odysee.com
+  - bitchute.com
+
+ytdlp:
+  active_command: "Default Preset"
+  commands:
+    - name: "Default Preset"
+      command: "yt-dlp --format worst --quiet --no-warnings --simulate --print-json"
+
+other:
+  max_duration: 0 # wip
+  max_file_size: 0 # wip
+  max_stream_size: 10485760 # ~10mb # The amount of bytes that can be held in memory
+  max_file_size: 10485760 # ~10mb # The amount of bytes that can be held in storage
+  max_retries: 0 # wip
+  max_duration: 0 # seconds # wip
+
+queue:
+  max_size: 12
+  max_message_url_count: 3
+
+log: # wip
+  debug: true
+  exception: true
+  warning: true
+  info: true
