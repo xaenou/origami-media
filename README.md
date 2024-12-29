@@ -4,7 +4,7 @@ The purpose of this maubot plugin is to process and display videos for matrix se
 
 ## Features
 
-Almost everything is configurable and can be adjusted within the maubot manager dashboard for the instance.
+Almost everything is configurable and can be adjusted within the maubot manager dashboard of it's assigned instance.
 See base-config.yaml.
 
 - video embeddings
