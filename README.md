@@ -1,6 +1,6 @@
-# Origmai Video Maubot Matrix Plugin
+# Origmai Video
 
-The purpose of this bot is to process and display videos for matrix servers when a url is posted or a command is directly used on it.
+The purpose of this maubot plugin is to process and display videos for matrix servers when a url is posted or a command is directly used on it.
 
 ## Features
 
@@ -16,7 +16,7 @@ See base-config.yaml.
 ## Server Dependencies
 
 - maubot
-- yt-dlp
+- yt-dlp cli
 - ffmpeg
 
 ## Planned features
@@ -27,3 +27,4 @@ See base-config.yaml.
 - rate limiting
 - timeout settings
 - output settings
+- live streams
