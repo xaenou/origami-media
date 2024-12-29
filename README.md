@@ -1,6 +1,6 @@
 # Origami Video
 
-The purpose of this maubot plugin is to process and display videos for matrix servers when a url is posted or a command is directly used on it.
+The purpose of this maubot plugin is to process and display videos for matrix servers when a url is detected or the appropriate command is supplied with a valid url.
 
 ## Features
 
