@@ -74,14 +74,12 @@ class MediaHandler:
                             video_data.write(chunk)
 
                             if total_bytes > self.config.other.get(
-                                "max_file_size", 10485760
+                                "max_stream_size", 10485760
                             ):
                                 self.log.warning(
-                                    f"Stream exceeded max size limit of {self.config.other.get('max_file_size', 10485760)} bytes. Aborting."
+                                    f"Stream exceeded max size limit of {self.config.other.get('max_stream_size', 10485760)} bytes. Aborting."
                                 )
                                 return None
-
-                            video_data.write(chunk)
 
                 video_data.seek(0)
                 return video_data
