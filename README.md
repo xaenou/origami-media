@@ -1,4 +1,4 @@
-# Origmai Video Bot Plugin
+# Origmai Video Maubot Matrix Plugin
 
 The purpose of this bot is to process and display videos for matrix servers when a url is posted or a command is directly used on it.
 
