@@ -7,10 +7,14 @@ The purpose of this maubot plugin is to process and display videos for matrix se
 Almost everything is configurable and can be adjusted within the maubot manager dashboard for the instance.
 See base-config.yaml.
 
+- video embeddings
 - Queues
-- Streaming
+- Concurrency
 - Passive URL listening
-- URL cleaning
+- URL validation
+- Url whitelist
+- max file-size control
+- dynamic yt-dlp config
 
 ## Server Dependencies
 
@@ -20,8 +24,7 @@ See base-config.yaml.
 
 ## Planned features
 
-- Concurrency
-- Disable by log type
+- disable log by type
 - yt-dlp python module compatibility
 - ffmpeg configuration
 - rate limits
@@ -29,3 +32,4 @@ See base-config.yaml.
 - output settings
 - live streams
 - documentation
+- url cleaning
