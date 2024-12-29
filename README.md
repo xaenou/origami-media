@@ -8,11 +8,11 @@ Almost everything is configurable and can be adjusted within the maubot manager 
 See base-config.yaml.
 
 - video embeddings
-- Queues
-- Concurrency
-- Passive URL listening
-- URL validation
-- Url whitelist
+- queues
+- concurrency
+- passive URL listening
+- url validation
+- url whitelist
 - max file-size control
 - dynamic yt-dlp config
 
