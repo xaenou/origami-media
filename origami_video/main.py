@@ -2,7 +2,7 @@ import asyncio
 from typing import Any, Dict, Type, cast
 
 from maubot.handlers import command
-from maubot.matrix import MaubotMessageEvent
+from maubot.matrix import MessageEvent
 from maubot.plugin_base import Plugin
 from mautrix.types.event import message
 from mautrix.util.config import BaseProxyConfig, ConfigUpdateHelper
@@ -68,7 +68,7 @@ class OrigamiVideo(Plugin):
         return Config
 
     @command.passive(r"https?:\/\/[^\s.,!?]+", case_insensitive=True, multiple=True)
-    async def main(self, event: MaubotMessageEvent, val):
+    async def main(self, event: MessageEvent, val):
         self.log.info(event.content.body, val)
         if not self.config.meta.get("enable_passive", False):  # type: ignore
             self.log.info("Passive command is currently disabled. Ignoring message.")
@@ -131,7 +131,7 @@ class OrigamiVideo(Plugin):
         await super().stop()
 
     @command.new(name="ov", help="Help command.")
-    async def ov(self, event: MaubotMessageEvent):
+    async def ov(self, event: MessageEvent):
         if not self.config.meta.get("enable_active", False):  # type: ignore
             await event.respond("Active commands are currently disabled.")
             self.log.info("Active commands are disabled. Ignoring `dl` command.")
@@ -157,7 +157,7 @@ class OrigamiVideo(Plugin):
 
     @ov.subcommand(name="dl", help="Downloads and posts a video")
     @command.argument(name="url", pass_raw=True)
-    async def dl(self, event: MaubotMessageEvent, url: str):
+    async def dl(self, event: MessageEvent, url: str):
         if not self.config.meta.get("enable_active", False):  # type: ignore
             await event.respond("Active commands are currently disabled.")
             self.log.info("Active commands are disabled. Ignoring `dl` command.")
@@ -166,7 +166,7 @@ class OrigamiVideo(Plugin):
         await self.media_pipeline.process(event=event, url=url)
 
     @ov.subcommand(name="check", help="Checks for dependencies.")
-    async def check(self, event: MaubotMessageEvent):
+    async def check(self, event: MessageEvent):
         if not self.config.meta.enable_active.get("enable_active", False):  # type: ignore
             await event.respond("Active commands are currently disabled.")
             self.log.info("Active commands are disabled. Ignoring `check` command.")

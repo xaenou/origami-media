@@ -1,6 +1,5 @@
 from typing import Optional
 
-from maubot.matrix import MaubotMessageEvent
 from mautrix.types import ContentURI, ThumbnailInfo, VideoInfo
 from mautrix.types.event import message
 

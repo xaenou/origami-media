@@ -1,12 +1,10 @@
 import asyncio
 import json
-import re
 import subprocess
 from io import BytesIO
 from typing import Optional, Tuple
-from urllib.parse import urlparse
-
 from aiohttp import ClientSession
+
 from mautrix.util.ffmpeg import probe_bytes
 
 from .media_models import ThumbnailData, ThumbnailMetadata, VideoData, VideoMetadata
