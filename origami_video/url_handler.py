@@ -18,7 +18,9 @@ class UrlHandler:
 
     TIMESTAMP_REGEX = re.compile(r"[?&]t=(\d+)")
 
-    URL_REGEX = re.compile('\bhttps?:\/\/[^\s<>"]+')
+    URL_REGEX = re.compile(
+    r'\bhttps?:\/\/(?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}(?:\/\S*)?\b'
+)
 
     def _extract_urls(self, message):
         urls = re.findall(self.URL_REGEX, message)

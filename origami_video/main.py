@@ -2,7 +2,7 @@ import asyncio
 from typing import Any, Dict, Type, cast
 
 from maubot.handlers import command, event
-from maubot.matrix import MessageEvent
+from maubot import MessageEvent
 from maubot.plugin_base import Plugin
 from mautrix.types.event import message, EventType
 from mautrix.util.config import BaseProxyConfig, ConfigUpdateHelper
@@ -72,7 +72,7 @@ class OrigamiVideo(Plugin):
             return
         if not event.content.msgtype.is_text or event.sender is self.client.mxid or event.content.body.startswith("!"):
             return
-        if "http" not in event.content.body or "www" not in event.content.body:
+        if "http" not in event.content.body and "www" not in event.content.body:
             return
         try:
             self.event_queue.put_nowait(event)
