@@ -2,6 +2,8 @@
 
 The purpose of this maubot plugin is to process and display videos for matrix servers when a url is detected or the appropriate command is supplied with a valid url.
 
+NOTICE: This is still highly experimental and not stable.
+
 ## Features
 
 Almost everything is configurable and can be adjusted within the maubot manager dashboard of it's assigned instance.
