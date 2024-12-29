@@ -26,12 +26,4 @@ See base-config.yaml.
 
 ## Planned features
 
-- disable log by type
-- yt-dlp python module compatibility
-- ffmpeg configuration
-- rate limits
-- timeout settings
-- output settings
-- live streams
-- documentation
-- url cleaning
+See: Issues
