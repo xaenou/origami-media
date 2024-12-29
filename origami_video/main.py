@@ -13,37 +13,32 @@ from .url_handler import UrlHandler
 
 
 class Config(BaseProxyConfig):
-    DEFAULTS = {
-    "whitelist": [],
-    "ytdlp": {},
-    "queue": {"max_size": 100},
-    "meta": {},
-    "other": {}
-    }
-
     def do_update(self, helper: ConfigUpdateHelper):
-        for key in self.DEFAULTS.keys():
-            helper.copy(key)
+            helper.copy("whitelist")
+            helper.copy("ytdlp")
+            helper.copy("queue")
+            helper.copy("meta")
+            helper.copy("other")
 
     @property
     def ytdlp(self) -> Dict[str, Any]:
-        return cast(Dict[str, Any], self.get("ytdlp", self.DEFAULTS["ytdlp"]))
+        return cast(Dict[str, Any], self.get("ytdlp", {}))
 
     @property
     def whitelist(self) -> list[str]:
-        return cast(list[str], self.get("whitelist", self.DEFAULTS["whitelist"]))
+        return cast(list[str], self.get("whitelist", []))
 
     @property
     def meta(self) -> Dict[str, Any]:
-        return cast(Dict[str, Any], self.get("meta", self.DEFAULTS["meta"]))
+        return cast(Dict[str, Any], self.get("meta", {}))
 
     @property
     def queue(self) -> Dict[str, Any]:
-        return cast(Dict[str, Any], self.get("queue", self.DEFAULTS["queue"]))
+        return cast(Dict[str, Any], self.get("queue", {}))
 
     @property
     def other(self) -> Dict[str, Any]:
-        return cast(Dict[str, Any], self.get("other", self.DEFAULTS["other"]))
+        return cast(Dict[str, Any], self.get("other", {}))
 
 
 class OrigamiVideo(Plugin):
