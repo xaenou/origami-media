@@ -13,7 +13,7 @@ See base-config.yaml.
 - passive URL listening
 - url validation
 - url whitelist
-- max file-size control
+- file size control
 - dynamic yt-dlp config
 
 ## Server Dependencies
