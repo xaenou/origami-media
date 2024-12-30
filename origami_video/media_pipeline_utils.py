@@ -203,6 +203,35 @@ class SynapseHandler:
         self.log = log
         self.client = client
 
+    async def is_reacted(self, room_id, event_id, reaction: str)-> Tuple[bool, Optional[str]]:
+        try:
+            response = await self.client.get_event_context(room_id=room_id, event_id=event_id, limit=4)
+            for event in response.events_after:
+                content = getattr(event, "content", None)
+                if content:
+                    relates_to = getattr(content, "relates_to", None)
+                    if relates_to:
+                        if (
+                            relates_to.rel_type == "m.annotation"
+                            and relates_to.event_id == event_id
+                            and relates_to.key == reaction
+                            and event.sender == self.client.mxid
+                        ):
+                            self.log.info(f"Found reaction event: {event.event_id}")
+                            return True, event.event_id
+            self.log.info("Reaction event not found in recent events.")
+            return False, None
+        except Exception as e:
+            self.log.error(f"Failed to fetch reaction event: {e}")
+            return None, None
+
+    async def reaction_handler(self, event):
+        is_reacted, reaction_id = await self.is_reacted(room_id=event.room_id, event_id=event.event_id, reaction="🔄")
+        if not is_reacted:
+            await event.react(key="🔄")
+        if is_reacted:
+            await self.client.redact(room_id=event.room_id, event_id=reaction_id)
+
     async def upload_to_content_repository(self, data, filename, size) -> str | None:
         response = await self.client.upload_media(
             data=data,
