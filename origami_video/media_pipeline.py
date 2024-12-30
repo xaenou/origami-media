@@ -1,5 +1,6 @@
 from typing import Optional
 
+
 from mautrix.types import ContentURI, ThumbnailInfo, VideoInfo
 from mautrix.types.event import message
 
@@ -17,9 +18,7 @@ class MediaPipeline:
 
     async def process(self, url, event):
         try:
-            reaction_event_ID = await event.react(key="🔄")
-            room_event_ID = event.room_id
-
+            await self.synapse_handler.reaction_handler(event)
             result = await self.video_processor.process_url(url)
             video: Optional[VideoData] = result[0]
             thumbnail: Optional[ThumbnailData] = result[1]
@@ -92,7 +91,6 @@ class MediaPipeline:
                 thumbnail_url=ContentURI(thumbnail_uri) if thumbnail_uri else None,
             )
 
-            # Construct and send the video event
             content = message.MediaMessageEventContent(
                 msgtype=message.MessageType.VIDEO,
                 url=ContentURI(video_uri),
@@ -102,8 +100,11 @@ class MediaPipeline:
 
             await event.respond(content=content, reply=True)
             self.log.info("OrigamiVideo.dl: Video message sent successfully.")
-            self.client.redact(room_id=room_event_ID, event_id=reaction_event_ID)
+            await self.synapse_handler.reaction_handler(event)
+
 
         except Exception as e:
             self.log.exception(f"OrigamiVideo.dl: {e}")
-            self.client.redact(room_id=room_event_ID, event_id=reaction_event_ID)
+            await self.synapse_handler.reaction_handler(event)
+
+
