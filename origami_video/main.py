@@ -2,7 +2,7 @@ import asyncio
 from typing import Any, Dict, Type, cast
 
 from maubot.handlers import command, event
-from maubot import MessageEvent
+from maubot.matrix import MaubotMessageEvent
 from maubot.plugin_base import Plugin
 from mautrix.types.event import message, EventType
 from mautrix.util.config import BaseProxyConfig, ConfigUpdateHelper
@@ -67,7 +67,7 @@ class OrigamiVideo(Plugin):
         return Config
 
     @event.on(EventType.ROOM_MESSAGE)
-    async def main(self, event: MessageEvent):
+    async def main(self, event: MaubotMessageEvent):
         if not self.config.meta.get("enable_passive", False):
             return
         if not event.content.msgtype.is_text or event.sender is self.client.mxid or event.content.body.startswith("!"):
@@ -128,7 +128,7 @@ class OrigamiVideo(Plugin):
         await super().stop()
 
     @command.new(name="ov")
-    async def ov(self, event: MessageEvent) -> None:
+    async def ov(self, event: MaubotMessageEvent) -> None:
         if not self.config.meta.get("enable_active", False):
             await event.respond("Active commands are currently disabled.")
             self.log.info("Active commands are disabled. Ignoring `dl` command.")
@@ -141,7 +141,7 @@ class OrigamiVideo(Plugin):
             "• `!ov check` — Check if all required dependencies are installed\n"
             "   Example: `!ov check` "
         )
-        content = message.TextMessageEventContent(
+        content = message.TextMaubotMessageEventContent(
             msgtype=message.MessageType.NOTICE,
             format=message.Format.HTML,
             formatted_body=help_text,
@@ -153,7 +153,7 @@ class OrigamiVideo(Plugin):
 
     @ov.subcommand(name="dl", help="Downloads and posts a video")
     @command.argument(name="url", pass_raw=True)
-    async def dl(self, event: MessageEvent, url: str) -> None:
+    async def dl(self, event: MaubotMessageEvent, url: str) -> None:
         if not self.config.meta.get("enable_active", False):
             await event.respond("Active commands are currently disabled.")
             self.log.info("Active commands are disabled. Ignoring `dl` command.")
@@ -162,10 +162,37 @@ class OrigamiVideo(Plugin):
         await self.media_pipeline.process(event=event, url=url)
 
     @ov.subcommand(name="check", help="Checks for dependencies.")
-    async def check(self, event: MessageEvent) -> None:
+    async def check(self, event: MaubotMessageEvent) -> None:
         if not self.config.meta.get("enable_active", False):
             await event.respond("Active commands are currently disabled.")
             self.log.info("Active commands are disabled. Ignoring `check` command.")
             return
-
+        
         await self.dependency_handler.run_all_checks(event=event)
+
+    @ov.subcommand(name="debug")
+    async def debug(self, event: MaubotMessageEvent):
+        if self.config.meta.get("debug", False):
+            try:
+                room_id = event.room_id
+                self.log.info(f"[DEBUG] Room ID: {room_id}")
+                
+                initial_event_id = event.event_id
+                self.log.info(f"[DEBUG] Initial Event ID: {initial_event_id}")
+                
+                reaction_id = await event.react(key="🐛")
+                self.log.info(f"[DEBUG] Reaction Event ID: {reaction_id}")
+                
+                reaction_event = await self.client.get_event(event_id=reaction_id, room_id=room_id)
+                self.log.info(f"[DEBUG] Reaction Event Details: {reaction_event}")
+                
+                await self.client.redact(room_id=room_id, event_id=reaction_id)
+                updated_reaction_event = await self.client.get_event(event_id=reaction_id, room_id=room_id)
+                self.log.info(f"[DEBUG] Updated Reaction Event Details: {updated_reaction_event}")
+
+            except Exception as e:
+                self.log.error(f"[ERROR] Exception occurred in debug: {e}")
+
+
+
+
