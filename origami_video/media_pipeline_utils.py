@@ -4,6 +4,7 @@ import re
 import subprocess
 from io import BytesIO
 from typing import Optional, Tuple
+import unicodedata
 
 from aiohttp import ClientSession
 from mautrix.util.ffmpeg import probe_bytes
@@ -165,14 +166,26 @@ class MediaHandler:
             await self._get_stream_metadata(video_stream.getvalue()) or {}
         )
 
-        filename = "{title}-{uploader}-[{extractor}-{id}-{ext}]".format(
+        filename = "{title}-{uploader}-{extractor}-{id}.{ext}".format(
             title=video_ytdlp_metadata.get("title", "unknown_title"),
             uploader=video_ytdlp_metadata.get("uploader", "unknown_uploader"),
             extractor=video_ytdlp_metadata.get("extractor", "unknown_platform"),
             id=video_ytdlp_metadata["id"],
             ext=video_ytdlp_metadata.get("ext", "unknown_extension"),
         )
-        filename = re.sub(r'[<>:"/\\|?*\x00-\x1F]', "_", filename).strip(" .")[:255]
+        # Normalize to ASCII to remove non-ASCII characters (e.g., curly quotes)
+        filename = unicodedata.normalize('NFKD', filename).encode('ASCII', 'ignore').decode('ASCII')
+        # Add single quote (') and curly quotes if not normalized
+        filename = re.sub(r'[<>:"/\\|?*\x00-\x1F\'’“”]', "_", filename)
+        # Replace spaces with underscores
+        filename = re.sub(r'\s+', "_", filename)
+        # Consolidate multiple underscores into a single underscore
+        filename = re.sub(r'__+', "_", filename)
+        # Remove leading and trailing underscores and dots, and limit length
+        filename = filename.strip("_.")[:255]
+        # Ensure no consecutive underscores remain
+        filename = re.sub(r'_+', "_", filename)
+
 
         video = Media(
             filename=filename,
