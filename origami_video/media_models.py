@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from io import BytesIO
 from typing import Optional
 
@@ -23,7 +23,16 @@ class StreamMetadata:
 
 @dataclass
 class MediaMetadata(YTDLPMetadata, StreamMetadata):
-    pass
+    url: str = field(init=True)
+    id: str = field(init=True)
+    title: Optional[str] = None
+    uploader: Optional[str] = None
+    extractor: Optional[str] = None
+    ext: Optional[str] = None
+    duration: Optional[float] = None
+    width: Optional[int] = None
+    height: Optional[int] = None
+    size: Optional[int] = None
 
 
 @dataclass
