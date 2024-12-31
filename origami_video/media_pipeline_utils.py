@@ -119,7 +119,8 @@ class MediaHandler:
 
     def _get_extension_from_url(self, url: str) -> str:
         filename = url.rsplit("/", 1)[-1]
-        return f".{filename.rsplit('.', 1)[-1]}" if "." in filename else ".jpg"
+        return filename.rsplit('.', 1)[-1] if "." in filename else "jpg"
+
 
     async def process_url(self, url: str) -> Tuple[Optional[Media], Optional[Media]]:
 
