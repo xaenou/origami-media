@@ -137,17 +137,30 @@ class MediaHandler:
             )
             raise Exception
         
-        if video_ytdlp_metadata.get("is_live", True) and not self.config.other.get("enable_livestreams", False):
+        is_live = video_ytdlp_metadata.get("is_live")
+        if is_live is None:
+            self.log.warning(
+                "MediaHandler.process_url: 'is_live' key is missing from metadata. Defaulting to non-live."
+            )
+            is_live = False
+
+        if is_live and not self.config.other.get("enable_livestreams", False):
             self.log.warning(
                 "MediaHandler.process_url: Live video detected, and livestreams are disabled. Stopping processing."
             )
             raise Exception("Livestreams are disabled in the configuration.")
 
-        if not video_ytdlp_metadata.get("is_live", False):
+        if not is_live:
             duration = video_ytdlp_metadata.get("duration")
             if duration is None:
                 self.log.warning(
                     "MediaHandler.process_url: Video duration is missing from metadata. Stopping processing."
+                )
+                raise Exception
+
+            if duration > self.config.other.get("max_duration", 0):
+                self.log.warning(
+                    "MediaHandler.process_url: Video length is over the duration limit. Stopping processing."
                 )
                 raise Exception
 
