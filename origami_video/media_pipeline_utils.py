@@ -108,10 +108,17 @@ class MediaHandler:
                 )
                 return None
 
+            duration = float(stream.get("duration", 0))
+            if duration > self.config.other.get("max_duration", 0):
+                self.log.warning(
+                    f"MediaProcessor._get_stream_metadata: Duration exceeds max_duration."
+                )
+                return None
+
             return {
                 "width": stream.get("width"),
                 "height": stream.get("height"),
-                "duration": float(stream.get("duration", 0)),
+                "duration": duration,
                 "size": len(data),
             }
         except Exception as e:
@@ -152,23 +159,16 @@ class MediaHandler:
 
         if not is_live:
             duration = video_ytdlp_metadata.get("duration")
-            if duration is None:
+            if duration is not None:
+                if duration > self.config.other.get("max_duration", 0):
+                    self.log.warning(
+                        "MediaHandler.process_url: Video length is over the duration limit. Stopping processing."
+                    )
+                    raise Exception
+            else:
                 self.log.warning(
-                    "MediaHandler.process_url: Video duration is missing from metadata. Stopping processing."
+                    "MediaHandler.process_url: Video duration is missing from metadata. Will extract it from stream data."
                 )
-                raise Exception
-
-            if duration > self.config.other.get("max_duration", 0):
-                self.log.warning(
-                    "MediaHandler.process_url: Video length is over the duration limit. Stopping processing."
-                )
-                raise Exception
-
-            if duration > self.config.other.get("max_duration", 0):
-                self.log.warning(
-                    "MediaHandler.process_url: Video length is over the duration limit. Stopping processing."
-                )
-                raise Exception
 
         video_stream = await self._stream_to_memory(video_ytdlp_metadata["url"])
         if not video_stream:
