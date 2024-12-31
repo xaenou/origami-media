@@ -24,7 +24,7 @@ other:
   max_duration: 1200 # seconds
   max_stream_size: 104857600 # bytes
   max_file_size: 104857600  # bytes
-  max_retries: 0
+  max_retries: 1
 
 queue:
   max_size: 12
