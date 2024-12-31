@@ -41,11 +41,11 @@ class Config(BaseProxyConfig):
         return cast(Dict[str, Any], self.get("other", {}))
 
 
-class OrigamiVideo(Plugin):
+class OrigamiMedia(Plugin):
     config: Config
 
     async def start(self):
-        self.log.info(f"Starting Origami Video")
+        self.log.info(f"Starting Origami Media")
         await super().start()
 
         if not self.config:
@@ -149,7 +149,7 @@ class OrigamiVideo(Plugin):
             return
 
         content = (
-            "**Origami Video Commands**\n\n"
+            "**Origami Media Commands**\n\n"
             "**Available commands:**\n"
             "• `!ov dl <url>` — Download and post a video from a URL\n"
             "   Example: `!ov dl https://example.com/video`\n\n"
@@ -160,7 +160,7 @@ class OrigamiVideo(Plugin):
         await event.respond(content)
         return
 
-    @ov.subcommand(name="dl", help="Downloads and posts a video")
+    @ov.subcommand(name="dl")
     @command.argument(name="url", pass_raw=True)
     async def dl(self, event: MaubotMessageEvent, url: str) -> None:
         if not self.config.meta.get("enable_active", False):
@@ -170,7 +170,7 @@ class OrigamiVideo(Plugin):
 
         await self.media_pipeline.process(event=event, url=url)
 
-    @ov.subcommand(name="check", help="Checks for dependencies.")
+    @ov.subcommand(name="check")
     async def check(self, event: MaubotMessageEvent) -> None:
         if not self.config.meta.get("enable_active", False):
             await event.respond("Active commands are currently disabled.")

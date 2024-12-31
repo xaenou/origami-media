@@ -39,7 +39,7 @@ class MediaPipeline:
             )
             if not video_uri:
                 self.log.warning(
-                    "OrigamiVideo.dl: Failed to interact with content repository for video upload."
+                    "OrigamiMedia.dl: Failed to interact with content repository for video upload."
                 )
                 raise Exception
 
@@ -80,7 +80,7 @@ class MediaPipeline:
                     )
                 else:
                     self.log.warning(
-                        "OrigamiVideo.dl: Failed to upload thumbnail to Synapse."
+                        "OrigamiMedia.dl: Failed to upload thumbnail to Synapse."
                     )
 
             video_info = VideoInfo(
@@ -101,9 +101,9 @@ class MediaPipeline:
             )
 
             await event.respond(content=content, reply=True)
-            self.log.info("OrigamiVideo.dl: Video message sent successfully.")
+            self.log.info("OrigamiMedia.dl: Video message sent successfully.")
             await self.synapse_handler.reaction_handler(event)
 
         except Exception as e:
-            self.log.exception(f"OrigamiVideo.dl: {e}")
+            self.log.exception(f"OrigamiMedia.dl: {e}")
             await self.synapse_handler.reaction_handler(event)
