@@ -1,42 +1,33 @@
-import os
 from dataclasses import dataclass
 from io import BytesIO
 from typing import Optional
 
 
 @dataclass
-class VideoMetadata:
+class YTDLPMetadata:
     url: str
     id: str
     title: Optional[str] = None
     uploader: Optional[str] = None
+    extractor: Optional[str] = None
     ext: Optional[str] = None
+
+
+@dataclass
+class StreamMetadata:
     duration: Optional[float] = None
     width: Optional[int] = None
     height: Optional[int] = None
+    size: Optional[int] = None
 
 
 @dataclass
-class ThumbnailMetadata:
-    url: Optional[str] = None
-    ext: Optional[str] = None
-    width: Optional[int] = None
-    height: Optional[int] = None
-
-    def __post_init__(self):
-        if self.url and not self.ext:
-            self.ext = os.path.splitext(self.url)[-1].lstrip(".") or None
+class MediaMetadata(YTDLPMetadata, StreamMetadata):
+    pass
 
 
 @dataclass
-class VideoData:
+class Media:
+    filename: str
     stream: BytesIO
-    info: VideoMetadata
-    size: int
-
-
-@dataclass
-class ThumbnailData:
-    stream: BytesIO
-    info: ThumbnailMetadata
-    size: int
+    metadata: MediaMetadata

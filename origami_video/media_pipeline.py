@@ -1,10 +1,6 @@
-from typing import Optional
-
-
 from mautrix.types import ContentURI, ThumbnailInfo, VideoInfo
 from mautrix.types.event import message
 
-from .media_models import ThumbnailData, ThumbnailMetadata, VideoData, VideoMetadata
 from .media_pipeline_utils import MediaHandler, SynapseHandler
 
 
@@ -20,22 +16,23 @@ class MediaPipeline:
         try:
             await self.synapse_handler.reaction_handler(event)
             result = await self.video_processor.process_url(url)
-            video: Optional[VideoData] = result[0]
-            thumbnail: Optional[ThumbnailData] = result[1]
+            video = result[0]
+            thumbnail = result[1]
 
             if video is None:
                 raise Exception
 
-            video_metadata: Optional[VideoMetadata] = (
-                video.info if video and video.info else None
-            )
+            video_metadata = video.metadata if video and video.metadata else None
+
             video_ext = (
                 video_metadata.ext if video_metadata and video_metadata.ext else "mp4"
             )
-            video_filename = (
-                f"{video_metadata.id}.{video_ext}" if video_metadata else "video.mp4"
+
+            video_filename = video.filename if video_metadata else "video.mp4"
+
+            video_size = (
+                video_metadata.size if video_metadata and video_metadata.size else 0
             )
-            video_size = video.size if video else 0
 
             video_uri = await self.synapse_handler.upload_to_content_repository(
                 data=video.stream, filename=video_filename, size=video_size
@@ -51,17 +48,22 @@ class MediaPipeline:
             thumbnail_uri = None
             thumbnail_info = None
 
-            if thumbnail and thumbnail.info:
-                thumbnail_metadata: ThumbnailMetadata = thumbnail.info
+            if thumbnail and thumbnail.metadata:
+                thumbnail_metadata = thumbnail.metadata
+
                 thumbnail_ext = (
                     thumbnail_metadata.ext if thumbnail_metadata.ext else "jpg"
                 )
+
                 thumbnail_filename = (
-                    f"{video_metadata.id}_thumbnail.{thumbnail_ext}"
-                    if video_metadata
-                    else "thumbnail.jpg"
+                    thumbnail.filename if thumbnail.filename else "thumbnail"
                 )
-                thumbnail_size = thumbnail.size if thumbnail else 0
+
+                thumbnail_size = (
+                    thumbnail_metadata.size
+                    if thumbnail_metadata and thumbnail_metadata.size
+                    else 0
+                )
 
                 thumbnail_uri = await self.synapse_handler.upload_to_content_repository(
                     data=thumbnail.stream,
@@ -102,9 +104,6 @@ class MediaPipeline:
             self.log.info("OrigamiVideo.dl: Video message sent successfully.")
             await self.synapse_handler.reaction_handler(event)
 
-
         except Exception as e:
             self.log.exception(f"OrigamiVideo.dl: {e}")
             await self.synapse_handler.reaction_handler(event)
-
-

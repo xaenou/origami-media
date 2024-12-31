@@ -1,13 +1,14 @@
 import asyncio
 import json
+import re
 import subprocess
 from io import BytesIO
 from typing import Optional, Tuple
-from aiohttp import ClientSession
 
+from aiohttp import ClientSession
 from mautrix.util.ffmpeg import probe_bytes
 
-from .media_models import ThumbnailData, ThumbnailMetadata, VideoData, VideoMetadata
+from .media_models import Media, MediaMetadata
 
 
 class MediaHandler:
@@ -27,7 +28,6 @@ class MediaHandler:
 
     async def _run_ytdlp_command(self, command: str) -> Optional[dict]:
         try:
-            self.log.info(f"Running yt-dlp command: {command}")
             process = await asyncio.create_subprocess_shell(
                 command, stdout=subprocess.PIPE, stderr=subprocess.PIPE
             )
@@ -39,21 +39,20 @@ class MediaHandler:
 
             output = stdout.decode().strip()
             if not output:
-                self.log.error("yt-dlp output is empty.")
+                self.log.error(
+                    "MediaHandler._run_ytdlp_command: yt-dlp output is empty."
+                )
                 return None
 
-            self.log.debug(f"yt-dlp output: {output}")
             return json.loads(output)
-        except json.JSONDecodeError as e:
-            self.log.error(f"Failed to parse yt-dlp output: {e}")
-            return None
+
         except Exception as e:
-            self.log.exception(f"MediaProcessor._run_ytdlp_command: {e}")
+            self.log.exception(f"MediaHandler._run_ytdlp_command: {e}")
             return None
 
     async def _stream_to_memory(self, stream_url: str) -> BytesIO | None:
         video_data = BytesIO()
-        max_retries = 1
+        max_retries = self.config.other.get("max_retries", 0)
 
         for attempt in range(1, max_retries + 1):
             try:
@@ -91,7 +90,7 @@ class MediaHandler:
         )
         return None
 
-    async def _get_media_metadata(self, data: bytes, media_type: str) -> dict:
+    async def _get_stream_metadata(self, data: bytes) -> Optional[dict]:
         try:
             metadata = await probe_bytes(data)
             stream = next(
@@ -104,95 +103,137 @@ class MediaHandler:
             )
             if not stream:
                 self.log.warning(
-                    f"MediaProcessor._get_media_metadata: No video stream found in {media_type}."
+                    f"MediaProcessor._get_stream_metadata: No stream found."
                 )
-                return {}
+                return None
 
             return {
                 "width": stream.get("width"),
                 "height": stream.get("height"),
                 "duration": float(stream.get("duration", 0)),
+                "size": len(data),
             }
         except Exception as e:
-            self.log.exception(f"MediaProcessor._get_media_metadata: {e}")
-            return {}
+            self.log.exception(f"MediaProcessor._get_stream_metadata: {e}")
+            return None
 
-    async def process_url(
-        self, url: str
-    ) -> Tuple[Optional[VideoData], Optional[ThumbnailData]]:
-        if not url.strip():
-            self.log.warning("MediaProcessor.process_url: Invalid URL.")
-            raise Exception
+    def _get_extension_from_url(self, url: str) -> str:
+        filename = url.rsplit("/", 1)[-1]
+        return f".{filename.rsplit('.', 1)[-1]}" if "." in filename else ".jpg"
+
+    async def process_url(self, url: str) -> Tuple[Optional[Media], Optional[Media]]:
 
         command = self._create_ytdlp_command(url)
         if not command:
+            self.log.warning("MediaHandler.process_url: Invalid command, check config.")
+            raise Exception
+
+        video_ytdlp_metadata = await self._run_ytdlp_command(command)
+        if not video_ytdlp_metadata:
             self.log.warning(
-                "MediaProcessor.process_url: Invalid command, check config."
+                "MediaHandler.process_url: Failed to find video with yt_dlp"
             )
             raise Exception
-
-        video_info = await self._run_ytdlp_command(command)
-        if not video_info:
+        
+        if video_ytdlp_metadata.get("is_live", True) and not self.config.other.get("enable_livestreams", False):
             self.log.warning(
-                "MediaProcessor.process_url: Failed to find video with yt_dlp"
+                "MediaHandler.process_url: Live video detected, and livestreams are disabled. Stopping processing."
             )
+            raise Exception("Livestreams are disabled in the configuration.")
+
+        if not video_ytdlp_metadata.get("is_live", False):
+            duration = video_ytdlp_metadata.get("duration")
+            if duration is None:
+                self.log.warning(
+                    "MediaHandler.process_url: Video duration is missing from metadata. Stopping processing."
+                )
+                raise Exception
+
+            if duration > self.config.other.get("max_duration", 0):
+                self.log.warning(
+                    "MediaHandler.process_url: Video length is over the duration limit. Stopping processing."
+                )
+                raise Exception
+
+        video_stream = await self._stream_to_memory(video_ytdlp_metadata["url"])
+        if not video_stream:
+            self.log.warning("MediaHandler.process_url: Failed to download video.")
             raise Exception
 
-        video_data = await self._stream_to_memory(video_info["url"])
-        if not video_data:
-            self.log.warning("MediaProcessor.process_url: Failed to download video.")
-            raise Exception
-
-        video_metadata = await self._get_media_metadata(video_data.getvalue(), "video")
-
-        if video_data.getbuffer().nbytes > self.config.other.get(
-            "max_file_size", 10485760
-        ):
-            self.log.warning(
-                f"MediaProcessor.process_url: {url} exceeded file size, aborting."
-            )
-            raise Exception
-
-        video = VideoData(
-            stream=video_data,
-            info=VideoMetadata(
-                url=video_info["url"],
-                id=video_info["id"],
-                title=video_info.get("title"),
-                uploader=video_info.get("uploader"),
-                ext=video_info.get("ext"),
-                duration=video_metadata.get("duration"),
-                width=video_metadata.get("width"),
-                height=video_metadata.get("height"),
-            ),
-            size=video_data.getbuffer().nbytes,
+        video_stream_metadata = (
+            await self._get_stream_metadata(video_stream.getvalue()) or {}
         )
 
-        thumbnail: Optional[ThumbnailData] = None
-        if video_info.get("thumbnail"):
-            thumbnail_data = await self._stream_to_memory(video_info["thumbnail"])
-            if thumbnail_data:
-                thumbnail_metadata = await self._get_media_metadata(
-                    thumbnail_data.getvalue(), "thumbnail"
+        filename = "{title}-{uploader}-{extractor}-{id}-{ext}".format(
+            title=video_ytdlp_metadata.get("title", "unknown_title"),
+            uploader=video_ytdlp_metadata.get("uploader", "unknown_uploader"),
+            extractor=video_ytdlp_metadata.get("extractor", "unknown_platform"),
+            id=video_ytdlp_metadata["id"],
+            ext=video_ytdlp_metadata.get("ext", "unknown_extension"),
+        )
+        filename = re.sub(r'[<>:"/\\|?*\x00-\x1F]', "_", filename).strip(" .")[:255]
+
+        video = Media(
+            filename=filename,
+            stream=video_stream,
+            metadata=MediaMetadata(
+                url=video_ytdlp_metadata["url"],
+                id=video_ytdlp_metadata["id"],
+                title=video_ytdlp_metadata.get("title"),
+                uploader=video_ytdlp_metadata.get("uploader"),
+                ext=video_ytdlp_metadata.get("ext"),
+                extractor=video_ytdlp_metadata.get("extractor"),
+                duration=video_stream_metadata.get("duration"),
+                width=video_stream_metadata.get("width"),
+                height=video_stream_metadata.get("height"),
+                size=video_stream_metadata.get("size"),
+            ),
+        )
+
+        thumbnail: Optional[Media] = None
+        thumbnail_url = video_ytdlp_metadata.get("thumbnail")
+        if thumbnail_url:
+            thumbnail_stream = await self._stream_to_memory(thumbnail_url)
+            if thumbnail_stream:
+                thumbnail_stream_metadata = await self._get_stream_metadata(
+                    thumbnail_stream.getvalue()
                 )
-                thumbnail = ThumbnailData(
-                    stream=thumbnail_data,
-                    info=ThumbnailMetadata(
-                        url=video_info.get("thumbnail"),
-                        width=thumbnail_metadata.get("width"),
-                        height=thumbnail_metadata.get("height"),
-                    ),
-                    size=thumbnail_data.getbuffer().nbytes,
-                )
+                if thumbnail_stream_metadata:
+                    thumbnail_ext = self._get_extension_from_url(thumbnail_url)
+                    thumbnail = Media(
+                        filename=video_ytdlp_metadata["id"]
+                        + "_thumbnail"
+                        + thumbnail_ext,
+                        stream=thumbnail_stream,
+                        metadata=MediaMetadata(
+                            url=thumbnail_url,
+                            id=video_ytdlp_metadata["id"],
+                            uploader=video_ytdlp_metadata.get("uploader"),
+                            ext=thumbnail_ext,
+                            width=thumbnail_stream_metadata.get("width"),
+                            height=thumbnail_stream_metadata.get("height"),
+                            size=thumbnail_stream_metadata.get("size"),
+                        ),
+                    )
+                else:
+                    self.log.warning(
+                        "MediaHandler.process_url: Failed to fetch thumbnail metadata."
+                    )
             else:
                 self.log.warning(
-                    "MediaProcessor.process_url: Failed to download thumbnail."
+                    "MediaHandler.process_url: Failed to download thumbnail."
                 )
 
+        self.log.info(
+            f"Video Found:\n- Title: {video.metadata.title}\n- Uploader: {video.metadata.uploader}\n"
+            f"- Resolution: {video.metadata.width}x{video.metadata.height}\n"
+            f"- Duration: {video.metadata.duration}s"
+        )
+
+        if thumbnail:
             self.log.info(
-                f"Video Found:\n- Title: {video.info.title}\n- Uploader: {video.info.uploader}\n"
-                f"- Resolution: {video.info.width}x{video.info.height}\n"
-                f"- Duration: {video.info.duration}s"
+                f"Thumbnail Found:\n- Resolution: {thumbnail.metadata.width}x{thumbnail.metadata.height}\n"
+                f"- Size: {thumbnail.metadata.size} bytes"
             )
 
         return (video, thumbnail)
@@ -203,9 +244,13 @@ class SynapseHandler:
         self.log = log
         self.client = client
 
-    async def is_reacted(self, room_id, event_id, reaction: str)-> Tuple[bool, Optional[str]]:
+    async def _is_reacted(
+        self, room_id, event_id, reaction: str
+    ) -> Tuple[bool, Optional[str]]:
         try:
-            response = await self.client.get_event_context(room_id=room_id, event_id=event_id, limit=4)
+            response = await self.client.get_event_context(
+                room_id=room_id, event_id=event_id, limit=4
+            )
             for event in response.events_after:
                 content = getattr(event, "content", None)
                 if content:
@@ -223,10 +268,12 @@ class SynapseHandler:
             return False, None
         except Exception as e:
             self.log.error(f"Failed to fetch reaction event: {e}")
-            return None, None
+            return False, None
 
-    async def reaction_handler(self, event):
-        is_reacted, reaction_id = await self.is_reacted(room_id=event.room_id, event_id=event.event_id, reaction="🔄")
+    async def reaction_handler(self, event) -> None:
+        is_reacted, reaction_id = await self._is_reacted(
+            room_id=event.room_id, event_id=event.event_id, reaction="🔄"
+        )
         if not is_reacted:
             await event.react(key="🔄")
         if is_reacted:
