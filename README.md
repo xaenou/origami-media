@@ -19,6 +19,8 @@ See base-config.yaml.
 - file size control
 - dynamic yt-dlp config
 
+and much more.
+
 ## Server Dependencies
 
 - maubot
