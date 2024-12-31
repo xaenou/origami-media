@@ -183,27 +183,8 @@ class OrigamiVideo(Plugin):
     async def debug(self, event: MaubotMessageEvent):
         if self.config.meta.get("debug", False):
             try:
-                room_id = event.room_id
-                self.log.info(f"[DEBUG] Room ID: {room_id}")
-
-                initial_event_id = event.event_id
-                self.log.info(f"[DEBUG] Initial Event ID: {initial_event_id}")
-
-                reaction_id = await event.react(key="🐛")
-                self.log.info(f"[DEBUG] Reaction Event ID: {reaction_id}")
-
-                reaction_event = await self.client.get_event(
-                    event_id=reaction_id, room_id=room_id
-                )
-                self.log.info(f"[DEBUG] Reaction Event Details: {reaction_event}")
-
-                await self.client.redact(room_id=room_id, event_id=reaction_id)
-                updated_reaction_event = await self.client.get_event(
-                    event_id=reaction_id, room_id=room_id
-                )
-                self.log.info(
-                    f"[DEBUG] Updated Reaction Event Details: {updated_reaction_event}"
-                )
+                 user_id = self.client.parse_user_id(self.client.mxid)
+                 self.log.info(user_id)
 
             except Exception as e:
                 self.log.error(f"[ERROR] Exception occurred in debug: {e}")

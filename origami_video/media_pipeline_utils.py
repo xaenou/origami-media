@@ -287,7 +287,7 @@ class SynapseHandler:
                             relates_to.rel_type == "m.annotation"
                             and relates_to.event_id == event_id
                             and relates_to.key == reaction
-                            and event.sender == self.client.mxid
+                            and event.sender == self.client.parse_user_id(self.client.mxid)
                         ):
                             self.log.info(f"Found reaction event: {event.event_id}")
                             return True, event.event_id
