@@ -165,7 +165,7 @@ class MediaHandler:
             await self._get_stream_metadata(video_stream.getvalue()) or {}
         )
 
-        filename = "{title}-{uploader}-{extractor}-{id}-{ext}".format(
+        filename = "{title}-{uploader}-[{extractor}-{id}-{ext}]".format(
             title=video_ytdlp_metadata.get("title", "unknown_title"),
             uploader=video_ytdlp_metadata.get("uploader", "unknown_uploader"),
             extractor=video_ytdlp_metadata.get("extractor", "unknown_platform"),
