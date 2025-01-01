@@ -23,21 +23,19 @@ class StreamMetadata:
 
 @dataclass
 class MediaMetadata:
-    # Non-default arguments (from YTDLPMetadata)
     url: str
     id: str
-
-    # Optional arguments (from YTDLPMetadata)
     title: Optional[str] = None
     uploader: Optional[str] = None
     extractor: Optional[str] = None
     ext: Optional[str] = None
-
-    # Optional arguments (from StreamMetadata)
     duration: Optional[float] = None
     width: Optional[int] = None
     height: Optional[int] = None
     size: Optional[int] = None
+    has_video: bool = False
+    has_audio: bool = False
+    is_image: bool = False
 
 
 @dataclass
@@ -45,3 +43,6 @@ class Media:
     filename: str
     stream: BytesIO
     metadata: MediaMetadata
+
+    def __repr__(self):
+        return f"Media(filename={self.filename!r}, " f"metadata={self.metadata!r})"
