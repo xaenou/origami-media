@@ -13,7 +13,7 @@ from mautrix.types import RelationType
 from .media_models import Media, MediaMetadata
 
 
-class MediaHandler:
+class MediaProcessor:
     def __init__(self, config, log):
         self.config = config
         self.log = log
@@ -266,7 +266,7 @@ class MediaHandler:
         return (video, thumbnail)
 
 
-class SynapseHandler:
+class SynapseProcessor:
     def __init__(self, log, client):
         self.log = log
         self.client = client

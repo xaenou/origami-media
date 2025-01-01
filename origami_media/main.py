@@ -8,7 +8,7 @@ from mautrix.types import EventType
 from mautrix.util.config import BaseProxyConfig, ConfigUpdateHelper
 
 from .dependency_handler import DependencyHandler
-from .media_pipeline import MediaPipeline
+from .media_handler import MediaHandler
 from .url_handler import UrlHandler
 
 
@@ -55,7 +55,7 @@ class OrigamiMedia(Plugin):
 
         self.dependency_handler = DependencyHandler(log=self.log)
         self.url_handler = UrlHandler(log=self.log, config=self.config)
-        self.media_pipeline = MediaPipeline(
+        self.media_handler = MediaHandler(
             log=self.log, client=self.client, config=self.config
         )
         self.valid_urls = asyncio.Queue()
@@ -113,7 +113,7 @@ class OrigamiMedia(Plugin):
                 item = await self.valid_urls.get()
                 url, event = item
                 self.log.info(f"[Pipeline Worker] Sending URL to MediaPipeline: {url}")
-                await self.media_pipeline.process(event=event, url=url)
+                await self.media_handler.process(event=event, url=url)
             except asyncio.CancelledError:
                 self.log.info("[Pipeline Worker] Shutting down gracefully.")
                 break
@@ -168,7 +168,7 @@ class OrigamiMedia(Plugin):
             self.log.info("Active commands are disabled. Ignoring `dl` command.")
             return
 
-        await self.media_pipeline.process(event=event, url=url)
+        await self.media_handler.process(event=event, url=url)
 
     @ov.subcommand(name="check")
     async def check(self, event: MaubotMessageEvent) -> None:

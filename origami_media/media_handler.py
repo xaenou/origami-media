@@ -1,21 +1,21 @@
 from mautrix.types import ContentURI, ThumbnailInfo, VideoInfo
 from mautrix.types.event import message
 
-from .media_pipeline_utils import MediaHandler, SynapseHandler
+from .media_utils import MediaProcessor, SynapseProcessor
 
 
-class MediaPipeline:
+class MediaHandler:
     def __init__(self, log, client, config):
         self.log = log
         self.client = client
         self.config = config
-        self.video_processor = MediaHandler(log=self.log, config=self.config)
-        self.synapse_handler = SynapseHandler(log=self.log, client=self.client)
+        self.media_processor = MediaProcessor(log=self.log, config=self.config)
+        self.synapse_processor = SynapseProcessor(log=self.log, client=self.client)
 
     async def process(self, url, event):
         try:
-            await self.synapse_handler.reaction_handler(event)
-            result = await self.video_processor.process_url(url)
+            await self.synapse_processor.reaction_handler(event)
+            result = await self.media_processor.process_url(url)
             video = result[0]
             thumbnail = result[1]
 
@@ -34,7 +34,7 @@ class MediaPipeline:
                 video_metadata.size if video_metadata and video_metadata.size else 0
             )
 
-            video_uri = await self.synapse_handler.upload_to_content_repository(
+            video_uri = await self.synapse_processor.upload_to_content_repository(
                 data=video.stream, filename=video_filename, size=video_size
             )
             if not video_uri:
@@ -63,7 +63,7 @@ class MediaPipeline:
                     else 0
                 )
 
-                thumbnail_uri = await self.synapse_handler.upload_to_content_repository(
+                thumbnail_uri = await self.synapse_processor.upload_to_content_repository(
                     data=thumbnail.stream,
                     filename=thumbnail_filename,
                     size=thumbnail_size,
@@ -98,8 +98,8 @@ class MediaPipeline:
             )
 
             await event.respond(content=content, reply=True)
-            await self.synapse_handler.reaction_handler(event)
+            await self.synapse_processor.reaction_handler(event)
 
         except Exception as e:
             self.log.exception(f"OrigamiMedia.dl: {e}")
-            await self.synapse_handler.reaction_handler(event)
+            await self.synapse_processor.reaction_handler(event)
