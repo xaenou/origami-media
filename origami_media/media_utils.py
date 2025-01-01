@@ -191,27 +191,23 @@ class MediaProcessor:
         command = self._create_ytdlp_commands(url)
         if not command:
             self.log.warning("MediaHandler.process_url: Invalid command, check config.")
-            raise Exception
+            raise Exception("No valid yt-dlp commands found in configuration.")
 
         video_ytdlp_metadata = await self._run_ytdlp_commands(command)
         if not video_ytdlp_metadata:
             self.log.warning(
                 "MediaHandler.process_url: Failed to find video with yt_dlp"
             )
-            raise Exception
+            raise Exception("Failed to retrieve metadata from yt-dlp.")
 
-        is_live = video_ytdlp_metadata.get("is_live")
-        if is_live is None:
-            self.log.warning(
-                "MediaHandler.process_url: 'is_live' key is missing from metadata. Defaulting to non-live."
-            )
-            is_live = False
-
+        is_live = video_ytdlp_metadata.get("is_live", False)
         if is_live and not self.config.other.get("enable_livestreams", False):
             self.log.warning(
                 "MediaHandler.process_url: Live video detected, and livestreams are disabled. Stopping processing."
             )
             raise Exception("Livestream processing is disabled in configuration.")
+
+        video_stream = None
 
         if not is_live:
             duration = video_ytdlp_metadata.get("duration")
@@ -221,13 +217,20 @@ class MediaProcessor:
                         "MediaHandler.process_url: Video length exceeds the configured duration limit. Stopping processing."
                     )
                     raise Exception("Video duration exceeds the configured maximum.")
+            else:
+                self.log.warning(
+                    "MediaHandler.process_url: Video duration is missing from metadata. Attempting to download the stream."
+                )
 
-                video_stream = await self._stream_to_memory(video_ytdlp_metadata["url"])
-                if not video_stream:
-                    self.log.warning(
-                        "MediaHandler.process_url: Failed to download video."
-                    )
-                    raise Exception
+            video_stream = await self._stream_to_memory(video_ytdlp_metadata["url"])
+            if not video_stream:
+                self.log.warning(
+                    "MediaHandler.process_url: Failed to download video stream."
+                )
+                raise Exception("Failed to download video stream.")
+
+        if not video_stream:
+            raise Exception("Video stream is not available after processing.")
 
         video_stream_metadata = (
             await self._get_stream_metadata(video_stream.getvalue()) or {}
