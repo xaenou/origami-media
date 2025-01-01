@@ -63,10 +63,12 @@ class MediaHandler:
                     else 0
                 )
 
-                thumbnail_uri = await self.synapse_processor.upload_to_content_repository(
-                    data=thumbnail.stream,
-                    filename=thumbnail_filename,
-                    size=thumbnail_size,
+                thumbnail_uri = (
+                    await self.synapse_processor.upload_to_content_repository(
+                        data=thumbnail.stream,
+                        filename=thumbnail_filename,
+                        size=thumbnail_size,
+                    )
                 )
                 if thumbnail_uri:
                     thumbnail_info = ThumbnailInfo(

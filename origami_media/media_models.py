@@ -3,7 +3,6 @@ from io import BytesIO
 from typing import Optional
 
 
-
 @dataclass
 class YTDLPMetadata:
     url: str

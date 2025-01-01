@@ -2,13 +2,13 @@ import asyncio
 import json
 import re
 import subprocess
+import unicodedata
 from io import BytesIO
 from typing import Optional, Tuple
-import unicodedata
 
-from aiohttp import ClientSession
-from mautrix.util.ffmpeg import probe_bytes
+from aiohttp import ClientSession, ClientTimeout
 from mautrix.types import RelationType
+from mautrix.util.ffmpeg import probe_bytes
 
 from .media_models import Media, MediaMetadata
 
@@ -55,11 +55,12 @@ class MediaProcessor:
     async def _stream_to_memory(self, stream_url: str) -> BytesIO | None:
         video_data = BytesIO()
         max_retries = self.config.other.get("max_retries", 0)
+        timeout = ClientTimeout(total=30)
 
         for attempt in range(1, max_retries + 1):
             try:
-                async with ClientSession() as session:
-                    async with session.get(stream_url, timeout=30) as response:
+                async with ClientSession(timeout=timeout) as session:
+                    async with session.get(stream_url) as response:
                         if response.status != 200:
                             self.log.warning(
                                 f"Attempt {attempt}: Failed to fetch stream, status: {response.status}"
@@ -128,7 +129,7 @@ class MediaProcessor:
 
     def _get_extension_from_url(self, url: str) -> str:
         filename = url.rsplit("/", 1)[-1]
-        return filename.rsplit('.', 1)[-1] if "." in filename else "jpg"
+        return filename.rsplit(".", 1)[-1] if "." in filename else "jpg"
 
     async def process_url(self, url: str) -> Tuple[Optional[Media], Optional[Media]]:
 
@@ -143,7 +144,7 @@ class MediaProcessor:
                 "MediaHandler.process_url: Failed to find video with yt_dlp"
             )
             raise Exception
-        
+
         is_live = video_ytdlp_metadata.get("is_live")
         if is_live is None:
             self.log.warning(
@@ -187,18 +188,21 @@ class MediaProcessor:
             ext=video_ytdlp_metadata.get("ext", "unknown_extension"),
         )
         # Normalize to ASCII to remove non-ASCII characters (e.g., curly quotes)
-        filename = unicodedata.normalize('NFKD', filename).encode('ASCII', 'ignore').decode('ASCII')
+        filename = (
+            unicodedata.normalize("NFKD", filename)
+            .encode("ASCII", "ignore")
+            .decode("ASCII")
+        )
         # Add single quote (') and curly quotes if not normalized
         filename = re.sub(r'[<>:"/\\|?*\x00-\x1F\'’“”]', "_", filename)
         # Replace spaces with underscores
-        filename = re.sub(r'\s+', "_", filename)
+        filename = re.sub(r"\s+", "_", filename)
         # Consolidate multiple underscores into a single underscore
-        filename = re.sub(r'__+', "_", filename)
+        filename = re.sub(r"__+", "_", filename)
         # Remove leading and trailing underscores and dots, and limit length
         filename = filename.strip("_.")[:255]
         # Ensure no consecutive underscores remain
-        filename = re.sub(r'_+', "_", filename)
-
+        filename = re.sub(r"_+", "_", filename)
 
         video = Media(
             filename=filename,
