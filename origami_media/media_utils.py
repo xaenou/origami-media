@@ -1,11 +1,12 @@
 import asyncio
 import json
+import os
 import re
 import shlex
 import subprocess
 import unicodedata
 from io import BytesIO
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Union
 
 from aiohttp import ClientError, ClientSession, ClientTimeout
 from mautrix.types import RelationType
@@ -19,45 +20,64 @@ class MediaProcessor:
         self.config = config
         self.log = log
 
-    def _create_ytdlp_commands(self, url: str) -> List[dict]:
-        commands = self.config.ytdlp.get("commands", [])
+    def _create_ytdlp_commands(self, url: str) -> Tuple[List[dict], List[dict]]:
+        commands = self.config.ytdlp.get("presets", [])
         if not commands:
             self.log.error(
                 "MediaProcessor._create_ytdlp_commands: No yt-dlp commands configured."
             )
-            return []
+            return [], []
 
-        command_list = []
+        download_commands = []
+        query_commands = []
         escaped_url = shlex.quote(url)
+        query_flags = "-s -j"
+        output_arg = self.config.file.get("output_path", "-")
 
         for command_entry in commands:
-            base_command = command_entry.get("command")
-            if not base_command:
+            name = command_entry.get("name", "Unnamed Command")
+            base_format = command_entry.get("format")
+
+            if not base_format:
                 self.log.warning(
-                    f"MediaProcessor._create_ytdlp_commands: Command missing in {command_entry}"
+                    f"MediaProcessor._create_ytdlp_commands: Format missing in command {name}"
                 )
                 continue
 
-            command_list.append(
+            query_commands.append(
                 {
-                    "name": command_entry["name"],
-                    "command": f"{base_command} {escaped_url}",
+                    "name": name,
+                    "command": f"yt-dlp -q --no-warnings {query_flags} -f '{base_format}' {escaped_url}",
                 }
             )
 
-            for fallback in command_entry.get("fallback_commands", []):
-                fallback_command = fallback.get("command")
-                if fallback_command:
-                    command_list.append(
-                        {
-                            "name": fallback["name"],
-                            "command": f"{fallback_command} {escaped_url}",
-                        }
-                    )
+            download_commands.append(
+                {
+                    "name": name,
+                    "command": f"yt-dlp -q --no-warnings -f '{base_format}' -o '{output_arg}' {escaped_url}",
+                }
+            )
 
-        return command_list
+            for idx, fallback_format in enumerate(
+                command_entry.get("fallback_formats", [])
+            ):
+                fallback_name = f"{name} (Fallback {idx + 1})"
+                query_commands.append(
+                    {
+                        "name": fallback_name,
+                        "command": f"yt-dlp -q --no-warnings {query_flags} -f '{fallback_format}' {escaped_url}",
+                    }
+                )
+                download_commands.append(
+                    {
+                        "name": fallback_name,
+                        "command": f"yt-dlp -q --no-warnings -f '{fallback_format}' -o '{output_arg}' {escaped_url}",
+                    }
+                )
 
-    async def _run_ytdlp_commands(self, commands: List[dict]) -> Optional[dict]:
+        return query_commands, download_commands
+
+    async def _ytdlp_execute_query(self, commands: List[dict]) -> Optional[dict]:
         for command_entry in commands:
             name = command_entry.get("name", "Unnamed Command")
             command = command_entry.get("command")
@@ -102,9 +122,179 @@ class MediaProcessor:
         self.log.error("All yt-dlp commands (including fallbacks) failed.")
         return None
 
+    async def _ytdlp_execute_download(
+        self,
+        commands: List[dict],
+    ) -> Optional[Union[BytesIO, str]]:
+        for command_entry in commands:
+            name = command_entry.get("name", "Unnamed Command")
+            command = command_entry.get("command")
+
+            if not command:
+                self.log.warning(f"Skipping empty download command: {name}")
+                continue
+
+            try:
+                self.log.info(f"Running yt-dlp download: {name} → {command}")
+                self.log.info(f"[DEBUG] Executing yt-dlp command: {command}")
+                process = await asyncio.create_subprocess_shell(
+                    command,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+
+                stdout, stderr = await process.communicate()
+
+                if process.returncode != 0:
+                    error_message = (
+                        stderr.decode().strip()
+                        if stderr
+                        else "No error message captured."
+                    )
+                    self.log.warning(f"{name} download failed: {error_message}")
+
+                    if "403" in error_message or "404" in error_message:
+                        self.log.error(
+                            f"{name}: Non-retryable error detected. Stopping retries."
+                        )
+                        break
+                    continue
+
+                output_path = self.config.file.get("output_path", "-")
+
+                if output_path == "-":
+                    self.log.info("[DEBUG] Saving output to memory (BytesIO)")
+                    self.log.info(
+                        f"[DEBUG] Raw stdout type: {type(stdout)}, size: {len(stdout)} bytes"
+                    )
+                    video_data = BytesIO(stdout)
+                    video_data.seek(0)
+
+                    if video_data.getbuffer().nbytes == 0:
+                        self.log.warning(f"{name}: Downloaded data is empty.")
+                        continue
+
+                    self.log.info(f"{name}: Video downloaded successfully into memory.")
+                    self.log.info(
+                        f"[DEBUG] BytesIO size: {video_data.getbuffer().nbytes} bytes"
+                    )
+                    return video_data
+
+                if output_path and output_path != "-":
+                    resolved_path = os.path.abspath(output_path)
+                    if os.path.exists(resolved_path):
+                        self.log.info(
+                            f"{name}: Video downloaded successfully to '{resolved_path}'."
+                        )
+                        return resolved_path
+                    else:
+                        self.log.warning(
+                            f"{name}: Expected output file '{resolved_path}' does not exist."
+                        )
+                        continue
+
+            except asyncio.TimeoutError:
+                self.log.warning(f"{name}: Download timed out.")
+            except Exception as e:
+                self.log.exception(f"{name}: An unexpected error occurred: {e}")
+
+        self.log.error("All yt-dlp download commands (including fallbacks) failed.")
+        return None
+
+    async def _ffmpeg_livestream_capture(
+        self, stream_url: str
+    ) -> Optional[Union[BytesIO, str]]:
+        output_path = self.config.file.get("output_path", "-")
+        ffmpeg_args = self.config.ffmpeg.get("livestream_args", [])
+
+        command_parts = [
+            "ffmpeg",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-i",
+            shlex.quote(stream_url),
+        ]
+        command_parts.extend(ffmpeg_args)
+
+        if output_path == "-":
+            if not command_parts or command_parts[-1] != "pipe:1":
+                command_parts.append("pipe:1")
+
+            self.log.info(
+                f"[INFO] Running FFmpeg (in-memory) with args:\n{' '.join(command_parts)}"
+            )
+
+            process = await asyncio.create_subprocess_shell(
+                " ".join(command_parts),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await process.communicate()
+            return_code = process.returncode
+
+            if return_code != 0:
+                self.log.error(f"FFmpeg exited with code {return_code}.")
+                if stderr:
+                    self.log.error(f"[FFmpeg stderr]\n{stderr.decode(errors='ignore')}")
+                return None
+
+            if not stdout:
+                self.log.error("[ERROR] FFmpeg returned empty data.")
+                return None
+
+            video_data = BytesIO(stdout)
+            video_data.seek(0)
+            self.log.info(
+                f"[INFO] Captured {len(stdout)} bytes from the stream as a fragmented MP4 (in-memory)."
+            )
+            return video_data
+
+        else:
+            if command_parts and command_parts[-1] == "pipe:1":
+                command_parts.pop()
+
+            resolved_path = os.path.abspath(output_path)
+            command_parts.append("-y")
+            command_parts.append(shlex.quote(resolved_path))
+
+            self.log.info(
+                f"[INFO] Running FFmpeg (file-output) with args:\n{' '.join(command_parts)}"
+            )
+
+            process = await asyncio.create_subprocess_shell(
+                " ".join(command_parts),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await process.communicate()
+            return_code = process.returncode
+
+            if return_code != 0:
+                self.log.error(f"FFmpeg exited with code {return_code}.")
+                if stderr:
+                    self.log.error(f"[FFmpeg stderr]\n{stderr.decode(errors='ignore')}")
+                return None
+
+            if not os.path.exists(resolved_path):
+                self.log.error(
+                    f"[ERROR] FFmpeg did not produce the file: {resolved_path}"
+                )
+                return None
+
+            file_size = os.path.getsize(resolved_path)
+            if file_size == 0:
+                self.log.error(f"[ERROR] FFmpeg output file is empty: {resolved_path}")
+                return None
+
+            self.log.info(
+                f"[INFO] Captured ~{file_size} bytes from the stream as a fragmented MP4 file:\n{resolved_path}"
+            )
+            return resolved_path
+
     async def _stream_to_memory(self, stream_url: str) -> BytesIO | None:
         video_data = BytesIO()
-        max_retries = self.config.other.get("max_retries", 0)
+        max_retries = self.config.file.get("max_retries", 0)
         timeout = ClientTimeout(total=30)
 
         for attempt in range(1, max_retries + 1):
@@ -123,11 +313,11 @@ class MediaProcessor:
                             total_bytes += chunk_size
                             video_data.write(chunk)
 
-                            if total_bytes > self.config.other.get(
+                            if total_bytes > self.config.file.get(
                                 "max_stream_size", 10485760
                             ):
                                 self.log.warning(
-                                    f"Stream exceeded max size limit of {self.config.other.get('max_stream_size', 10485760)} bytes. Aborting."
+                                    f"Stream exceeded max size limit of {self.config.file.get('max_stream_size', 10485760)} bytes. Aborting."
                                 )
                                 return None
 
@@ -150,7 +340,22 @@ class MediaProcessor:
 
     async def _get_stream_metadata(self, data: bytes) -> Optional[dict]:
         try:
+            max_file_size = self.config.file.get("max_in_memory_file_size", 0)
+            if len(data) > max_file_size:
+                self.log.warning(
+                    f"MediaProcessor._get_stream_metadata: File size exceeds max_file_size ({max_file_size} bytes)."
+                )
+                return None
+
+            self.log.info(f"[DEBUG] Data size: {len(data)} bytes")
+
             metadata = await probe_bytes(data)
+            self.log.info(f"[DEBUG] Raw metadata from probe_bytes: {metadata}")
+
+            if "streams" not in metadata or not metadata["streams"]:
+                self.log.warning(f"[DEBUG] No streams found in metadata: {metadata}")
+                return None
+
             stream = next(
                 (
                     stream
@@ -161,14 +366,16 @@ class MediaProcessor:
             )
             if not stream:
                 self.log.warning(
-                    f"MediaProcessor._get_stream_metadata: No stream found."
+                    f"MediaProcessor._get_stream_metadata: No video stream found in metadata."
                 )
                 return None
 
-            duration = float(stream.get("duration", 0))
-            if duration > self.config.other.get("max_duration", 0):
+            duration = float(stream.get("duration", 0) or 0)
+            self.log.info(f"[DEBUG] Stream duration: {duration}")
+
+            if duration > self.config.file.get("max_duration", 0):
                 self.log.warning(
-                    f"MediaProcessor._get_stream_metadata: Duration exceeds max_duration."
+                    f"MediaProcessor._get_stream_metadata: Duration exceeds max_duration ({self.config.file.get('max_duration')}s)."
                 )
                 return None
 
@@ -188,12 +395,15 @@ class MediaProcessor:
 
     async def process_url(self, url: str) -> Tuple[Optional[Media], Optional[Media]]:
 
-        command = self._create_ytdlp_commands(url)
-        if not command:
+        commands = self._create_ytdlp_commands(url)
+        if not commands:
             self.log.warning("MediaHandler.process_url: Invalid command, check config.")
             raise Exception("No valid yt-dlp commands found in configuration.")
 
-        video_ytdlp_metadata = await self._run_ytdlp_commands(command)
+        query_commands = commands[0]
+        download_commands = commands[1]
+
+        video_ytdlp_metadata = await self._ytdlp_execute_query(commands=query_commands)
         if not video_ytdlp_metadata:
             self.log.warning(
                 "MediaHandler.process_url: Failed to find video with yt_dlp"
@@ -201,18 +411,25 @@ class MediaProcessor:
             raise Exception("Failed to retrieve metadata from yt-dlp.")
 
         is_live = video_ytdlp_metadata.get("is_live", False)
-        if is_live and not self.config.other.get("enable_livestreams", False):
+        video_stream = None
+        if is_live and not self.config.ffmpeg.get("enable_livestream_previews", False):
             self.log.warning(
                 "MediaHandler.process_url: Live video detected, and livestreams are disabled. Stopping processing."
             )
             raise Exception("Livestream processing is disabled in configuration.")
-
-        video_stream = None
-
-        if not is_live:
+        elif is_live:
+            video_stream = await self._ffmpeg_livestream_capture(
+                stream_url=video_ytdlp_metadata["url"]
+            )
+            if not video_stream:
+                self.log.warning(
+                    "MediaHandler.process_url: Failed to download video stream."
+                )
+                raise Exception("Failed to download live stream.")
+        elif not is_live:
             duration = video_ytdlp_metadata.get("duration")
             if duration is not None:
-                if duration > self.config.other.get("max_duration", 0):
+                if duration > self.config.file.get("max_duration", 0):
                     self.log.warning(
                         "MediaHandler.process_url: Video length exceeds the configured duration limit. Stopping processing."
                     )
@@ -222,19 +439,22 @@ class MediaProcessor:
                     "MediaHandler.process_url: Video duration is missing from metadata. Attempting to download the stream."
                 )
 
-            video_stream = await self._stream_to_memory(video_ytdlp_metadata["url"])
-            if not video_stream:
-                self.log.warning(
-                    "MediaHandler.process_url: Failed to download video stream."
-                )
-                raise Exception("Failed to download video stream.")
+            video_stream = await self._ytdlp_execute_download(
+                commands=download_commands
+            )
 
         if not video_stream:
-            raise Exception("Video stream is not available after processing.")
+            self.log.warning(
+                "MediaHandler.process_url: Failed to download video stream."
+            )
+            raise Exception("Failed to download video stream.")
 
-        video_stream_metadata = (
-            await self._get_stream_metadata(video_stream.getvalue()) or {}
-        )
+        if isinstance(video_stream, BytesIO):
+            video_stream_metadata = (
+                await self._get_stream_metadata(video_stream.getvalue()) or {}
+            )
+        else:
+            raise Exception("Downloading outside of stdout is not yet supported.")
 
         filename = "{title}-{uploader}-{extractor}-{id}.{ext}".format(
             title=video_ytdlp_metadata.get("title", "unknown_title"),
@@ -315,6 +535,7 @@ class MediaProcessor:
             f"Video Found:\n- Title: {video.metadata.title}\n- Uploader: {video.metadata.uploader}\n"
             f"- Resolution: {video.metadata.width}x{video.metadata.height}\n"
             f"- Duration: {video.metadata.duration}s"
+            f"- Size {video.metadata.size}"
         )
 
         if thumbnail:

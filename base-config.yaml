@@ -14,22 +14,34 @@ whitelist:
   - bitchute.com
 
 ytdlp:
-  active_command: "Default Preset"
-  commands:
+  active_preset: "Default Preset"
+  presets:
     - name: "Default Preset"
-      command: "yt-dlp -f 'bv*[height<=720]+ba' -q --no-warnings -s -j"
-      fallback_commands:
-        - name: "Fallback Preset 1"
-          command: "yt-dlp -f 'bv*[height<=1080]+ba' -q --no-warnings -s -j"
-        - name: "Fallback Preset 2"
-          command: "yt-dlp -f worst -q --no-warnings -s -j"
+      format: "bestvideo[height<=720]+bestaudio/best[height<=720]"
+      fallback_formats:
+        - "bestvideo[height<=1080]+bestaudio/best[height<=1080]"
+        - "worst"
 
-other:
-  enable_livestreams: False # livestream handling wip
+ffmpeg:
+  enable_livestream_previews: True
+  livestream_args:
+    - "-c"
+    - "copy"
+    - "-bsf:a"
+    - "aac_adtstoasc"
+    - "-movflags"
+    - "+frag_keyframe+empty_moov"
+    - "-t"
+    - "90"
+    - "-f"
+    - "mp4"
+
+file:
+  output_path: "-" # stream to memory
   max_duration: 1200 # seconds
-  max_stream_size: 104857600 # bytes
-  max_file_size: 104857600 # bytes
-  max_retries: 1
+  max_in_memory_file_size: 104857600 # bytes # Not yet implemented while download occurs
+  max_file_size: 104857600 # bytes # Not yet implemented while download occurs
+  max_retries: 1 # Not yet implemented
 
 queue:
   max_size: 12
