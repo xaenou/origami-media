@@ -183,9 +183,9 @@ class OrigamiMedia(Plugin):
     async def debug(self, event: MaubotMessageEvent):
         if self.config.meta.get("debug", False):
             try:
-                 user_id = self.client.parse_user_id(self.client.mxid)
-                 self.log.info(user_id)
-                 self.log.info(self.client.mxid)
+                user_id = self.client.parse_user_id(self.client.mxid)
+                self.log.info(user_id)
+                self.log.info(self.client.mxid)
 
             except Exception as e:
                 self.log.error(f"[ERROR] Exception occurred in debug: {e}")
