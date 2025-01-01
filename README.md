@@ -1,7 +1,7 @@
 # Origami Media
 
 The purpose of this maubot plugin is to process and display media for matrix servers when a url is detected or the appropriate command is supplied with a valid url.
-Only videos are currently supported, but other types of embedded media such as images and X status embeds will also be supported in the future.
+Only videos and images are currently supported, but other types of embedded media such as X status embeds and audio streams will also be supported in the future.
 
 NOTICE: This is plugn is still highly experimental and not yet stable.
 
