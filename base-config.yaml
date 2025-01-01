@@ -17,13 +17,18 @@ ytdlp:
   active_command: "Default Preset"
   commands:
     - name: "Default Preset"
-      command: "yt-dlp -f worst -q --no-warnings -s -j"
+      command: "yt-dlp -f 'bv*[height<=720]+ba' -q --no-warnings -s -j"
+      fallback_commands:
+        - name: "Fallback Preset 1"
+          command: "yt-dlp -f 'bv*[height<=1080]+ba' -q --no-warnings -s -j"
+        - name: "Fallback Preset 2"
+          command: "yt-dlp -f worst -q --no-warnings -s -j"
 
 other:
   enable_livestreams: False # livestream handling wip
   max_duration: 1200 # seconds
   max_stream_size: 104857600 # bytes
-  max_file_size: 104857600  # bytes
+  max_file_size: 104857600 # bytes
   max_retries: 1
 
 queue:
