@@ -16,10 +16,12 @@ See base-config.yaml.
 - concurrency
 - passive URL listening
 - url validation
-- url whitelist
+- domain whitelist
 - file size control
 - dynamic yt-dlp config
 - dynamic ffmpeg config
+- filesize constraints, in and out of memory
+- various fallback support
 - livestream previews
 
 and much more.
@@ -28,7 +30,7 @@ and much more.
 
 - maubot
 - yt-dlp cli
-- ffmpeg
+- ffmpeg cli
 
 ## Planned features
 
