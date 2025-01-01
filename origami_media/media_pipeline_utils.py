@@ -8,6 +8,7 @@ import unicodedata
 
 from aiohttp import ClientSession
 from mautrix.util.ffmpeg import probe_bytes
+from mautrix.types import RelationType
 
 from .media_models import Media, MediaMetadata
 
@@ -128,7 +129,6 @@ class MediaHandler:
     def _get_extension_from_url(self, url: str) -> str:
         filename = url.rsplit("/", 1)[-1]
         return filename.rsplit('.', 1)[-1] if "." in filename else "jpg"
-
 
     async def process_url(self, url: str) -> Tuple[Optional[Media], Optional[Media]]:
 
@@ -284,14 +284,12 @@ class SynapseHandler:
                     relates_to = getattr(content, "relates_to", None)
                     if relates_to:
                         if (
-                            relates_to.rel_type == "m.annotation"
+                            relates_to.rel_type == RelationType.ANNOTATION
                             and relates_to.event_id == event_id
                             and relates_to.key == reaction
-                            and event.sender == self.client.parse_user_id(self.client.mxid)
+                            and event.sender == self.client.mxid
                         ):
-                            self.log.info(f"Found reaction event: {event.event_id}")
                             return True, event.event_id
-            self.log.info("Reaction event not found in recent events.")
             return False, None
         except Exception as e:
             self.log.error(f"Failed to fetch reaction event: {e}")

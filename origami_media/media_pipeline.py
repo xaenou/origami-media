@@ -43,8 +43,6 @@ class MediaPipeline:
                 )
                 raise Exception
 
-            self.log.info(f"Video uploaded successfully: {video_uri}")
-
             thumbnail_uri = None
             thumbnail_info = None
 
@@ -71,7 +69,6 @@ class MediaPipeline:
                     size=thumbnail_size,
                 )
                 if thumbnail_uri:
-                    self.log.info(f"Thumbnail uploaded successfully: {thumbnail_uri}")
                     thumbnail_info = ThumbnailInfo(
                         height=int(thumbnail_metadata.height or 0),
                         width=int(thumbnail_metadata.width or 0),
@@ -101,7 +98,6 @@ class MediaPipeline:
             )
 
             await event.respond(content=content, reply=True)
-            self.log.info("OrigamiMedia.dl: Video message sent successfully.")
             await self.synapse_handler.reaction_handler(event)
 
         except Exception as e:
