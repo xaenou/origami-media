@@ -11,6 +11,7 @@ Almost everything is configurable and can be adjusted within the maubot manager 
 See base-config.yaml.
 
 - video embeddings
+- image embeddings
 - queues
 - concurrency
 - passive URL listening
@@ -18,6 +19,8 @@ See base-config.yaml.
 - url whitelist
 - file size control
 - dynamic yt-dlp config
+- dynamic ffmpeg config
+- livestream previews
 
 and much more.
 
