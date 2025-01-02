@@ -21,7 +21,14 @@ class UrlHandler:
     URL_REGEX = re.compile(r"\bhttps?:\/\/(?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}(?:\/\S*)?\b")
 
     def _extract_urls(self, message):
-        urls = re.findall(self.URL_REGEX, message)
+        parts = re.split(r"<code>.*?</code>", message, flags=re.DOTALL | re.IGNORECASE)
+        urls = []
+
+        for i, part in enumerate(parts):
+            if i % 2 == 0:
+                found_urls = re.findall(self.URL_REGEX, part)
+                urls.extend(found_urls)
+
         return urls
 
     def _validate_domain(self, url: str) -> str | None:
