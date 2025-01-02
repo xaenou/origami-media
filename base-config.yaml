@@ -12,6 +12,7 @@ whitelist:
   - rumble.com
   - odysee.com
   - bitchute.com
+  - 4cdn.org
 
 ytdlp:
   active_preset: "Default Preset"

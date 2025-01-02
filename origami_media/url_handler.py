@@ -18,18 +18,15 @@ class UrlHandler:
 
     TIMESTAMP_REGEX = re.compile(r"[?&]t=(\d+)")
 
+    REMOVE_BACKTICKS_REGEX = re.compile(r"`.*?`|```.*?```", re.DOTALL | re.IGNORECASE)
+
     URL_REGEX = re.compile(r"\bhttps?:\/\/(?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}(?:\/\S*)?\b")
 
     def _extract_urls(self, message):
-        parts = re.split(r"<code>.*?</code>", message, flags=re.DOTALL | re.IGNORECASE)
-        urls = []
-
-        for i, part in enumerate(parts):
-            if i % 2 == 0:
-                found_urls = re.findall(self.URL_REGEX, part)
-                urls.extend(found_urls)
-
-        return urls
+        clean_message = self.REMOVE_BACKTICKS_REGEX.sub("", message)
+        urls = re.findall(self.URL_REGEX, clean_message)
+        self.log.info(f"Filtered: {urls}")
+        return list(dict.fromkeys(urls))
 
     def _validate_domain(self, url: str) -> str | None:
         domain = urlparse(url).netloc.split(":")[0].split(".")[-2:]
@@ -97,5 +94,6 @@ class UrlHandler:
             await event.reply(content=sanitized_message)
 
         unique_valid_urls = list(dict.fromkeys(valid_urls))
+        self.log.info(f"Urls added to queue: {unique_valid_urls}")
 
         return unique_valid_urls, event
