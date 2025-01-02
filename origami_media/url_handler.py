@@ -89,4 +89,6 @@ class UrlHandler:
             await event.redact(reason="Redacted for tracking URL.")
             await event.reply(content=sanitized_message)
 
-        return valid_urls, event
+        unique_valid_urls = list(dict.fromkeys(valid_urls))
+
+        return unique_valid_urls, event
