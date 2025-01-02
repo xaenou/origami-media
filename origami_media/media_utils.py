@@ -154,10 +154,10 @@ class MediaProcessor:
                 output_path = self.config.file.get("output_path", "-")
                 in_memory = output_path == "-"
 
-                if in_memory:
-                    max_file_size = self.config.file.get("max_in_memory_file_size", 0)
-                else:
-                    max_file_size = self.config.file.get("max_file_size", 0)
+                max_file_size_key = (
+                    "max_in_memory_file_size" if in_memory else "max_file_size"
+                )
+                max_file_size = self.config.file.get(max_file_size_key, 0)
 
                 while True:
                     chunk = await process.stdout.read(1024 * 64)
@@ -245,6 +245,9 @@ class MediaProcessor:
         command_parts.extend(ffmpeg_args)
 
         in_memory = output_path == "-"
+        max_file_size_key = "max_in_memory_file_size" if in_memory else "max_file_size"
+        max_file_size = self.config.file.get(max_file_size_key, 0)
+
         if in_memory:
             if not command_parts or command_parts[-1] != "pipe:1":
                 command_parts.append("pipe:1")
@@ -268,7 +271,6 @@ class MediaProcessor:
 
             video_data = BytesIO()
             total_size = 0
-            max_file_size = self.config.file.get("max_in_memory_file_size", 10485760)
 
             try:
                 while True:
@@ -358,9 +360,6 @@ class MediaProcessor:
                 self.log.error(f"[ERROR] FFmpeg output file is empty: {resolved_path}")
                 return None
 
-            max_file_size = self.config.file.get(
-                "max_file_size", 104857600
-            )  # Default 100MB
             if max_file_size > 0 and file_size > max_file_size:
                 self.log.error(
                     f"[ERROR] File size limit exceeded ({file_size} > {max_file_size} bytes)."
@@ -378,11 +377,8 @@ class MediaProcessor:
         timeout = ClientTimeout(total=30)
         in_memory = output_path == "-"
 
-        max_file_size = (
-            self.config.file.get("max_in_memory_file_size", 10485760)
-            if in_memory
-            else self.config.file.get("max_file_size", 104857600)
-        )
+        max_file_size_key = "max_in_memory_file_size" if in_memory else "max_file_size"
+        max_file_size = self.config.file.get(max_file_size_key, 0)
 
         self.log.info(
             f"[INFO] Starting stream from '{stream_url}' to {'memory' if in_memory else output_path}. "

@@ -26,7 +26,7 @@ class UrlHandler:
 
     def _validate_domain(self, url: str) -> str | None:
         domain = urlparse(url).netloc.split(":")[0].split(".")[-2:]
-        domain = ".".join(domain)
+        domain = ".".join(domain).lower()
 
         if domain not in self.config.whitelist:
             self.log.warning(f"Invalid or unwhitelisted domain: {domain}")
@@ -46,16 +46,20 @@ class UrlHandler:
         return f"https://www.youtube.com/watch?v={video_id}{timestamp}"
 
     async def process(self, event):
-        self.log.info("Processing message for URLs...")
         valid_urls = []
+        message = event.content.body
 
-        urls = self._extract_urls(event.content.body)
+        urls = self._extract_urls(message)
         if len(urls) > self.config.queue.get("max_message_url_count", 3):
             self.log.warning("URLs exceed message limit.")
             return valid_urls
+
         if not urls:
             self.log.warning("No URLs found in the message.")
             return valid_urls
+
+        sanitized_message = message
+        url_mapping = {}
 
         for url in urls:
             try:
@@ -63,15 +67,26 @@ class UrlHandler:
                 if not domain:
                     continue
 
-                if domain == "youtube.com":
+                processed_url = url
+
+                if domain in ["youtube.com", "youtu.be"]:
                     processed_url = self._process_youtube_url(url)
                     if processed_url:
                         valid_urls.append(processed_url)
-                        self.log.info(f"Valid YouTube URL: {processed_url}")
+                        url_mapping[url] = processed_url
                 else:
                     valid_urls.append(url)
-                    self.log.info(f"Valid URL: {url}")
-            except Exception as e:
-                self.log.error(f"Error processing URL {url}: {e}")
+
+            except Exception:
+                self.log.error(f"Error processing URL {url}")
+
+        if self.config.meta.get(
+            "censor_trackers", True
+        ) and self.DETECT_YOUTUBE_TRACKERS.search(message):
+            for original, processed in url_mapping.items():
+                sanitized_message = sanitized_message.replace(original, processed)
+
+            await event.redact(reason="Redacted for tracking URL.")
+            await event.reply(content=sanitized_message)
 
         return valid_urls, event
