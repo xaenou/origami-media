@@ -109,3 +109,46 @@ class UrlHandler:
         self.log.info(f"Urls added to queue: {unique_valid_urls}")
 
         return (unique_valid_urls, event)
+
+    def process_string(
+        self, message: str, event: "MaubotMessageEvent"
+    ) -> tuple[list[str], "MaubotMessageEvent"]:
+        valid_urls = []
+        urls = self._extract_urls(message)
+
+        if len(urls) > self.config.queue.get("max_message_url_count", 3):
+            self.log.warning("UrlHandler.process_string: urls exceed message limit.")
+
+        if not urls:
+            self.log.warning("UrlHandler.process_string: no urls found in the message.")
+
+        sanitized_message = message
+        url_mapping = {}
+
+        for url in urls:
+            try:
+                domain = self._validate_domain(url)
+                if not domain:
+                    continue
+
+                processed_url = url
+
+                if domain in ["youtube.com", "youtu.be"]:
+                    processed_url = self._process_youtube_url(url)
+                    if processed_url:
+                        valid_urls.append(processed_url)
+                        url_mapping[url] = processed_url
+                else:
+                    valid_urls.append(url)
+
+            except Exception:
+                self.log.error(f"UrlHandler.process_string: error processing {url}")
+
+        if not valid_urls:
+            self.log.warning("UrlHandler.process_string: No valid URLs were processed.")
+            return ([], event)
+
+        unique_valid_urls = list(dict.fromkeys(valid_urls))
+        self.log.info(f"Urls processed: {unique_valid_urls}")
+
+        return (unique_valid_urls, event)

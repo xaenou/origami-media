@@ -1,6 +1,6 @@
 meta:
   enable_passive_url_detection: true
-  enable_commands: false
+  enable_commands: true
   censor_trackers: true
   debug: true
 

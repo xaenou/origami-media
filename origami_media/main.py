@@ -69,6 +69,7 @@ class OrigamiMedia(Plugin):
         self.display_handler = DisplayHandler(
             log=self.log, config=self.config, client=self.client
         )
+
         self.event_queue = asyncio.Queue(maxsize=self.config.queue.get("max_size", 100))
         self.url_event_queue = asyncio.Queue()
         self.media_event_queue = asyncio.Queue()
@@ -198,10 +199,26 @@ class OrigamiMedia(Plugin):
         self.log.info("All workers stopped cleanly.")
         await super().stop()
 
-    @command.new(name="om")
-    async def om(self, event: MaubotMessageEvent) -> None:
-        if self.config.meta.get("enable_commands", False):
+    @command.new(name="om", require_subcommand=False)
+    @command.argument("url", pass_raw=True, required=False)
+    async def om(self, event: MaubotMessageEvent, url: str) -> None:
+        if not self.config.meta.get("enable_commands", False):
             return
+        self.log.info(event)
+        self.log.info(url)
+
+        if not url:
+            return
+
+        urls, _ = self.url_handler.process_string(message=url, event=event)
+        if not urls:
+            return
+
+        processed_media, _ = await self.media_handler.process(urls=urls, event=event)
+        if not processed_media:
+            return
+
+        await self.display_handler.render(media=processed_media, event=event)
 
     @om.subcommand(name="debug")
     @command.argument(name="url", pass_raw=True)

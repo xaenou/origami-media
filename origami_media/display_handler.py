@@ -97,7 +97,10 @@ class DisplayHandler:
         return content
 
     async def render(
-        self, media: list["ProcessedMedia"], event: "MaubotMessageEvent"
+        self,
+        media: list["ProcessedMedia"],
+        event: "MaubotMessageEvent",
+        reply: bool = True,
     ) -> None:
         for media_object in media:
 
@@ -105,7 +108,9 @@ class DisplayHandler:
 
             room_id = event.room_id
 
-            content.set_reply(event, disable_fallback=True)
+            if reply:
+                content.set_reply(event, disable_fallback=True)
+
             await self.client.send_message_event(
                 room_id=room_id, event_type=EventType.ROOM_MESSAGE, content=content
             )
