@@ -1,9 +1,18 @@
 import re
+from typing import TYPE_CHECKING, List, Optional, Tuple, TypeAlias
 from urllib.parse import urlparse
+
+if TYPE_CHECKING:
+    from main import Config
+    from maubot.matrix import MaubotMessageEvent
+    from mautrix.util.logging.trace import TraceLogger
+
+
+processed_url_event: TypeAlias = Tuple[Optional[List[str]], "MaubotMessageEvent"]
 
 
 class UrlHandler:
-    def __init__(self, config, log):
+    def __init__(self, config: "Config", log: "TraceLogger"):
         self.config = config
         self.log = log
 
@@ -49,18 +58,16 @@ class UrlHandler:
         timestamp = f"&t={timestamp_match.group(1)}" if timestamp_match else ""
         return f"https://www.youtube.com/watch?v={video_id}{timestamp}"
 
-    async def process(self, event):
+    async def process(self, event: "MaubotMessageEvent") -> processed_url_event:
         valid_urls = []
-        message = event.content.body
+        message = str(event.content.body)
 
         urls = self._extract_urls(message)
         if len(urls) > self.config.queue.get("max_message_url_count", 3):
-            self.log.warning("URLs exceed message limit.")
-            return valid_urls
+            self.log.warning("UrlHandler.process: urls exceed message limit.")
 
         if not urls:
-            self.log.warning("No URLs found in the message.")
-            return valid_urls
+            self.log.warning("UrlHandler.process: no urls found in the message.")
 
         sanitized_message = message
         url_mapping = {}
@@ -82,18 +89,23 @@ class UrlHandler:
                     valid_urls.append(url)
 
             except Exception:
-                self.log.error(f"Error processing URL {url}")
+                self.log.error(f"UrlHandler.process: error processing {url}")
 
         if self.config.meta.get(
             "censor_trackers", True
         ) and self.DETECT_YOUTUBE_TRACKERS.search(message):
+            sanitized_message = "Tracking parameters removed:\n" + sanitized_message
             for original, processed in url_mapping.items():
                 sanitized_message = sanitized_message.replace(original, processed)
 
             await event.redact(reason="Redacted for tracking URL.")
             await event.reply(content=sanitized_message)
 
+        if not valid_urls:
+            self.log.warning("UrlHandler.process: No valid URLs were processed.")
+            return (None, event)
+
         unique_valid_urls = list(dict.fromkeys(valid_urls))
         self.log.info(f"Urls added to queue: {unique_valid_urls}")
 
-        return unique_valid_urls, event
+        return (unique_valid_urls, event)

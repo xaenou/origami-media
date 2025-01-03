@@ -13,6 +13,7 @@ whitelist:
   - odysee.com
   - bitchute.com
   - 4cdn.org
+  - tenor.com
 
 ytdlp:
   active_preset: "Default Preset"
@@ -46,7 +47,7 @@ file:
 
 queue:
   max_size: 12
-  max_message_url_count: 3
+  max_message_url_count: 1
 
 log: # wip
   debug: true

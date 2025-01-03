@@ -1,141 +1,194 @@
-from mautrix.types import (
-    AudioInfo,
-    ContentURI,
-    FileInfo,
-    ImageInfo,
-    ThumbnailInfo,
-    VideoInfo,
-)
-from mautrix.types.event import message
+from __future__ import annotations
 
+import asyncio
+from io import BytesIO
+from typing import TYPE_CHECKING, List, Optional, Tuple, TypeAlias
+
+from .media_models import ProcessedMedia
 from .media_utils import MediaProcessor, SynapseProcessor
+
+if TYPE_CHECKING:
+    from main import Config
+    from maubot.matrix import MaubotMatrixClient, MaubotMessageEvent
+    from mautrix.util.logging.trace import TraceLogger
+
+    from .media_utils import Media
+
+
+processed_media_event: TypeAlias = Tuple[
+    Optional[List[ProcessedMedia]], "MaubotMessageEvent"
+]
 
 
 class MediaHandler:
-    def __init__(self, log, client, config):
+    def __init__(
+        self, log: "TraceLogger", client: "MaubotMatrixClient", config: "Config"
+    ):
         self.log = log
         self.client = client
         self.config = config
         self.media_processor = MediaProcessor(log=self.log, config=self.config)
         self.synapse_processor = SynapseProcessor(log=self.log, client=self.client)
 
-    async def process(self, url: str, event):
+    async def _upload_media(
+        self, media_object: "Media"
+    ) -> Tuple[Optional[str], Optional[str]]:
+        content_stream_consumed = False
+        thumbnail_stream_consumed = False
+
         try:
-            await self.synapse_processor.reaction_handler(event)
+            if isinstance(media_object.content.stream, BytesIO):
+                media_object.content.stream.seek(0)
 
-            result = await self.media_processor.process_url(url)
-            if not result:
-                raise Exception("No result returned from process_url.")
-
-            media_obj, thumbnail_obj = result
-
-            if media_obj is None or media_obj.metadata is None:
-                raise Exception("Failed to create media_obj or metadata is missing.")
-
-            media_meta = media_obj.metadata
-            media_ext = media_meta.ext or "mp4"
-            media_filename = media_obj.filename or "media_file"
-            media_size = media_meta.size or 0
-
-            media_uri = await self.synapse_processor.upload_to_content_repository(
-                data=media_obj.stream, filename=media_filename, size=media_size
+            content_upload_result = (
+                await self.synapse_processor.upload_to_content_repository(
+                    data=media_object.content.stream,
+                    filename=media_object.content.filename,
+                    size=media_object.content.metadata.size or 0,
+                )
             )
-            if not media_uri:
-                self.log.warning("Could not upload main media to content repository.")
-                raise Exception("Failed to upload main media.")
+            content_stream_consumed = True
 
-            thumbnail_uri, thumbnail_info = None, None
-            if thumbnail_obj and thumbnail_obj.metadata:
-                t_meta = thumbnail_obj.metadata
-                t_ext = t_meta.ext or "jpg"
-                t_filename = thumbnail_obj.filename or "thumbnail"
-                t_size = t_meta.size or 0
+            if isinstance(content_upload_result, asyncio.Task):
+                await content_upload_result
+                content_upload_result = content_upload_result.result()
 
-                tmp_uri = await self.synapse_processor.upload_to_content_repository(
-                    data=thumbnail_obj.stream, filename=t_filename, size=t_size
+            if not content_upload_result:
+                self.log.warning(
+                    f"Failed to upload content for file: {media_object.content.filename}"
                 )
-                if tmp_uri:
-                    thumbnail_uri = tmp_uri
-                    thumbnail_info = ThumbnailInfo(
-                        height=int(t_meta.height or 0),
-                        width=int(t_meta.width or 0),
-                        mimetype=f"image/{t_ext}",
-                        size=int(t_size),
+                return None, None
+
+            thumbnail_upload_result = None
+            if media_object.thumbnail:
+                if isinstance(media_object.thumbnail.stream, BytesIO):
+                    media_object.thumbnail.stream.seek(0)
+
+                thumbnail_upload_result = (
+                    await self.synapse_processor.upload_to_content_repository(
+                        data=media_object.thumbnail.stream,
+                        filename=media_object.thumbnail.filename,
+                        size=media_object.thumbnail.metadata.size or 0,
                     )
-                else:
-                    self.log.warning("Failed to upload thumbnail to Synapse.")
+                )
+                thumbnail_stream_consumed = True
 
-            has_video = media_meta.has_video
-            has_audio = media_meta.has_audio
-            is_image = media_meta.is_image
+                if isinstance(thumbnail_upload_result, asyncio.Task):
+                    await thumbnail_upload_result
+                    thumbnail_upload_result = thumbnail_upload_result.result()
 
-            if is_image:
-                msgtype = message.MessageType.IMAGE
-                mimetype = f"image/{media_ext}"
-                image_info = ImageInfo(
-                    height=int(media_meta.height or 0),
-                    width=int(media_meta.width or 0),
-                    mimetype=mimetype,
-                    size=int(media_size),
-                )
-                content = message.MediaMessageEventContent(
-                    msgtype=msgtype,
-                    url=ContentURI(media_uri),
-                    filename=media_filename,
-                    info=image_info,
-                )
+                if not thumbnail_upload_result:
+                    self.log.warning("Thumbnail failed to upload to homeserver.")
 
-            elif has_video:
-                msgtype = message.MessageType.VIDEO
-                mimetype = f"video/{media_ext}"
-                video_info = VideoInfo(
-                    duration=int(media_meta.duration or 0),
-                    height=int(media_meta.height or 0),
-                    width=int(media_meta.width or 0),
-                    mimetype=mimetype,
-                    size=int(media_size),
-                    thumbnail_info=thumbnail_info,
-                    thumbnail_url=ContentURI(thumbnail_uri) if thumbnail_uri else None,
-                )
-                content = message.MediaMessageEventContent(
-                    msgtype=msgtype,
-                    url=ContentURI(media_uri),
-                    filename=media_filename,
-                    info=video_info,
-                )
+            return content_upload_result, thumbnail_upload_result
 
-            elif has_audio:
-                msgtype = message.MessageType.AUDIO
-                mimetype = f"audio/{media_ext}"
-                audio_info = AudioInfo(
-                    duration=int(media_meta.duration or 0),
-                    mimetype=mimetype,
-                    size=int(media_size),
-                )
-                content = message.MediaMessageEventContent(
-                    msgtype=msgtype,
-                    url=ContentURI(media_uri),
-                    filename=media_filename,
-                    info=audio_info,
-                )
+        finally:
+            if not content_stream_consumed and isinstance(
+                media_object.content.stream, BytesIO
+            ):
+                media_object.content.stream.close()
+            if (
+                media_object.thumbnail
+                and not thumbnail_stream_consumed
+                and isinstance(media_object.thumbnail.stream, BytesIO)
+            ):
+                media_object.thumbnail.stream.close()
 
-            else:
-                msgtype = message.MessageType.FILE
-                mimetype = "application/octet-stream"
-                file_info = FileInfo(
-                    mimetype=mimetype,
-                    size=int(media_size),
-                )
-                content = message.MediaMessageEventContent(
-                    msgtype=msgtype,
-                    url=ContentURI(media_uri),
-                    filename=media_filename,
-                    info=file_info,
-                )
+    async def process(
+        self, urls: list[str], event: "MaubotMessageEvent"
+    ) -> processed_media_event:
+        processed_media_array = []
 
-            await event.respond(content=content, reply=True)
-            await self.synapse_processor.reaction_handler(event)
+        await self.synapse_processor.reaction_handler(event)
 
-        except Exception as e:
-            self.log.exception(f"OrigamiMedia: {e}")
-            await self.synapse_processor.reaction_handler(event)
+        for url in urls:
+            media_object: Optional["Media"] = await self.media_processor.process_url(
+                url
+            )
+            if not media_object:
+                self.log.warning(f"Failed to process URL: {url}")
+                continue
+
+            media_uri, thumbnail_uri = await self._upload_media(media_object)
+            if not media_uri:
+                continue
+
+            processed_media_array.append(
+                ProcessedMedia(
+                    filename=media_object.content.filename,
+                    content_info=media_object.content.metadata,
+                    content_uri=media_uri,
+                    thumbnail_info=(
+                        media_object.thumbnail.metadata
+                        if media_object.thumbnail
+                        else None
+                    ),
+                    thumbnail_uri=thumbnail_uri,
+                )
+            )
+
+        await self.synapse_processor.reaction_handler(event)
+
+        if not processed_media_array:
+            self.log.warning(
+                "MediaHandler.process: No media was sucessfully processed."
+            )
+            return (None, event)
+
+        return (processed_media_array, event)
+
+    # async def _upload_media(
+    #     self, media_object: "Media"
+    # ) -> Tuple[Optional[str], Optional[str]]:
+    #     content_stream_consumed = False
+    #     thumbnail_stream_consumed = False
+
+    #     try:
+    #         if isinstance(media_object.content.stream, BytesIO):
+    #             media_object.content.stream.seek(0)
+
+    #         media_uri = await self.synapse_processor.upload_to_content_repository(
+    #             data=media_object.content.stream,
+    #             filename=media_object.content.filename,
+    #             size=media_object.content.metadata.size or 0,
+    #         )
+    #         content_stream_consumed = True
+
+    #         if not media_uri:
+    #             self.log.warning(
+    #                 f"MediaHandler._upload_media: Failed to upload content for file: {media_object.content.filename}"
+    #             )
+    #             return None, None
+
+    #         thumbnail_uri = None
+    #         if media_object.thumbnail:
+    #             if isinstance(media_object.thumbnail.stream, BytesIO):
+    #                 media_object.thumbnail.stream.seek(0)
+
+    #             thumbnail_uri = (
+    #                 await self.synapse_processor.upload_to_content_repository(
+    #                     data=media_object.thumbnail.stream,
+    #                     filename=media_object.thumbnail.filename,
+    #                     size=media_object.thumbnail.metadata.size or 0,
+    #                 )
+    #             )
+    #             thumbnail_stream_consumed = True
+
+    #             if not thumbnail_uri:
+    #                 self.log.warning(
+    #                     "MediaHandler._upload_media: Thumbnail failed to upload to homeserver."
+    #                 )
+
+    #         return media_uri, thumbnail_uri
+
+    #     finally:
+    #         if not content_stream_consumed and isinstance(
+    #             media_object.content.stream, BytesIO
+    #         ):
+    #             media_object.content.stream.close()
+    #         if (
+    #             media_object.thumbnail
+    #             and not thumbnail_stream_consumed
+    #             and isinstance(media_object.thumbnail.stream, BytesIO)
+    #         ):
+    #             media_object.thumbnail.stream.close()

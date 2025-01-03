@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import asyncio
 import json
 import os
@@ -5,20 +7,43 @@ import re
 import shlex
 import subprocess
 import unicodedata
+import uuid
 from io import BytesIO
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Any, AsyncIterable, Dict, List, Optional, Tuple, Union
+from urllib.parse import urlparse
 
 from aiohttp import ClientError, ClientSession, ClientTimeout
-from mautrix.types import RelationType
+from mautrix.types import ReactionEvent, RelationType
 from mautrix.util.ffmpeg import probe_bytes
 
-from .media_models import Media, MediaMetadata
+from .media_models import Media, MediaFile, MediaInfo
+
+if TYPE_CHECKING:
+    from main import Config
+    from maubot.matrix import MaubotMatrixClient, MaubotMessageEvent
+    from mautrix.types import EventID, RoomID
+    from mautrix.util.logging.trace import TraceLogger
 
 
 class MediaProcessor:
-    def __init__(self, config, log):
+    def __init__(self, config: "Config", log: "TraceLogger"):
         self.config = config
         self.log = log
+
+    async def _is_image(self, url: str) -> bool:
+        try:
+            timeout = ClientTimeout(total=10)
+            async with ClientSession(timeout=timeout) as session:
+                async with session.head(url, allow_redirects=True) as response:
+                    ctype = response.headers.get("Content-Type", "").lower()
+                    self.log.debug(f"HEAD Content-Type for {url}: {ctype}")
+                    if ctype.startswith("image/"):
+                        return True
+                    else:
+                        return False
+        except Exception as e:
+            self.log.warning(f"Failed HEAD request on {url}, ignoring: {e}")
+            return False
 
     def _create_ytdlp_commands(self, url: str) -> Tuple[List[dict], List[dict]]:
         commands = self.config.ytdlp.get("presets", [])
@@ -91,7 +116,9 @@ class MediaProcessor:
                 process = await asyncio.create_subprocess_shell(
                     command, stdout=subprocess.PIPE, stderr=subprocess.PIPE
                 )
-                stdout, stderr = await process.communicate()
+                stdout, stderr = await asyncio.wait_for(
+                    process.communicate(), timeout=100
+                )
 
                 if process.returncode != 0:
                     error_message = stderr.decode().strip()
@@ -114,6 +141,10 @@ class MediaProcessor:
 
             except json.JSONDecodeError as e:
                 self.log.error(f"{name} failed to parse JSON output: {e}")
+            except asyncio.TimeoutError:
+                self.log.error(f"{name}: Command timed out. Killing process.")
+                process.kill()
+                await process.wait()
             except ClientError as e:
                 self.log.warning(f"{name} encountered a network error: {e}")
             except Exception as e:
@@ -134,8 +165,10 @@ class MediaProcessor:
                 continue
 
             try:
-                self.log.info(f"Running yt-dlp download: {name} → {command}")
-                self.log.info(f"[DEBUG] Executing yt-dlp command: {command}")
+                self.log.info(
+                    f"[DEBUG] Executing yt-dlp download command: {name} → {command}"
+                )
+
                 process = await asyncio.create_subprocess_shell(
                     command,
                     stdout=asyncio.subprocess.PIPE,
@@ -160,7 +193,9 @@ class MediaProcessor:
                 max_file_size = self.config.file.get(max_file_size_key, 0)
 
                 while True:
-                    chunk = await process.stdout.read(1024 * 64)
+                    chunk = await asyncio.wait_for(
+                        process.stdout.read(1024 * 64), timeout=30
+                    )
                     if not chunk:
                         break
 
@@ -224,6 +259,13 @@ class MediaProcessor:
                 self.log.warning(f"{name}: Download timed out.")
             except Exception as e:
                 self.log.exception(f"{name}: An unexpected error occurred: {e}")
+            finally:
+                if process.returncode is None:
+                    self.log.warning(
+                        f"{name}: Process still running. Forcing termination."
+                    )
+                    process.kill()
+                    await process.wait()
 
         self.log.error("All yt-dlp download commands (including fallbacks) failed.")
         return None
@@ -274,7 +316,9 @@ class MediaProcessor:
 
             try:
                 while True:
-                    chunk = await process.stdout.read(1024 * 64)
+                    chunk = await asyncio.wait_for(
+                        process.stdout.read(1024 * 64), timeout=30
+                    )
                     if not chunk:
                         break
 
@@ -291,7 +335,9 @@ class MediaProcessor:
 
                     video_data.write(chunk)
 
-                _, stderr = await process.communicate()
+                    stdout, stderr = await asyncio.wait_for(
+                        process.communicate(), timeout=300
+                    )
                 return_code = process.returncode
 
                 if return_code != 0:
@@ -322,6 +368,13 @@ class MediaProcessor:
                 )
                 await process.wait()
                 return None
+            finally:
+                if process and process.returncode is None:
+                    self.log.warning(
+                        "[WARNING] FFmpeg process still running. Forcing termination."
+                    )
+                    process.kill()
+                    await process.wait()
 
         else:
             if command_parts and command_parts[-1] == "pipe:1":
@@ -340,7 +393,7 @@ class MediaProcessor:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
-            stdout, stderr = await process.communicate()
+            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=300)
             return_code = process.returncode
 
             if return_code != 0:
@@ -470,7 +523,6 @@ class MediaProcessor:
             format_info = metadata.get("format", {})
             format_name = format_info.get("format_name", "").lower()
 
-            # Define known image formats
             image_formats = (
                 "image2",
                 "png_pipe",
@@ -588,120 +640,129 @@ class MediaProcessor:
             self.log.exception(f"MediaProcessor._get_stream_metadata: {e}")
             return None
 
-    def _get_extension_from_url(self, url: str) -> str:
-        filename = url.rsplit("/", 1)[-1]
-        return filename.rsplit(".", 1)[-1] if "." in filename else "jpg"
-
-    async def process_url(self, url: str) -> Tuple[Optional[Media], Optional[Media]]:
-        is_image = False
-        try:
-            timeout = ClientTimeout(total=10)
-            async with ClientSession(timeout=timeout) as session:
-                async with session.head(url, allow_redirects=True) as response:
-                    ctype = response.headers.get("Content-Type", "").lower()
-                    self.log.debug(f"HEAD Content-Type for {url}: {ctype}")
-                    if ctype.startswith("image/"):
-                        is_image = True
-        except Exception as e:
-            self.log.warning(f"Failed HEAD request on {url}, ignoring: {e}")
-
-        if is_image:
-            self.log.info(
-                f"Detected image via Content-Type. Using _stream_to_memory for: {url}"
+    def _generate_filename(
+        self, url, ytdlp_metadata: Optional[Dict[str, str]] = None
+    ) -> str:
+        if ytdlp_metadata:
+            filename = "{title}-{uploader}-{extractor}-{id}.{ext}".format(
+                title=ytdlp_metadata.get("title", "unknown_title"),
+                uploader=ytdlp_metadata.get("uploader", "unknown_uploader"),
+                extractor=ytdlp_metadata.get("extractor", "unknown_platform"),
+                id=ytdlp_metadata.get("id", "unknown_id"),
+                ext=ytdlp_metadata.get("ext", "unknown_extension"),
             )
-            image_data = await self._download_image(url)
-            if not image_data:
-                raise Exception(f"Failed to fetch image from {url}")
-
-            if isinstance(image_data, BytesIO):
-                image_metadata = (
-                    await self._get_stream_metadata(image_data.getvalue()) or {}
-                )
-            else:
-                raise Exception("Downloading outside of stdout is not yet supported.")
-
+        else:
             filename = url.rsplit("/", 1)[-1] if "/" in url else url
-            filename = (
-                unicodedata.normalize("NFKD", filename)
-                .encode("ASCII", "ignore")
-                .decode("ASCII")
-            )
-            filename = re.sub(r'[<>:"/\\|?*\x00-\x1F\'’“”]', "_", filename)
-            filename = re.sub(r"\s+", "_", filename)
-            filename = re.sub(r"__+", "_", filename)
-            filename = filename.strip("_.")[:255]
-            filename = re.sub(r"_+", "_", filename)
 
-            image_obj = Media(
-                filename=filename or "unnamed_image.jpg",
-                stream=image_data,
-                metadata=MediaMetadata(
-                    url=url,
-                    id="unknown_id",
-                    title=filename,
-                    uploader=None,
-                    ext=filename.rsplit(".", 1)[-1] if "." in filename else "jpg",
-                    extractor="direct_image",
-                    duration=image_metadata.get("duration"),
-                    width=image_metadata.get("width"),
-                    height=image_metadata.get("height"),
-                    size=image_metadata.get("size"),
-                    has_video=image_metadata.get("has_video", False),
-                    has_audio=image_metadata.get("has_audio", False),
-                    is_image=image_metadata.get("is_image", False),
-                ),
-            )
+        # Normalize Unicode
+        filename = (
+            unicodedata.normalize("NFKD", filename)
+            .encode("ASCII", "ignore")
+            .decode("ASCII")
+        )
+        # Replace invalid characters
+        filename = re.sub(r'[<>:"/\\|?*\x00-\x1F\'’“”]', "_", filename)
+        # Replace spaces with underscores
+        filename = re.sub(r"\s+", "_", filename)
+        # Replace multiple underscores with a single one
+        filename = re.sub(r"__+", "_", filename)
+        # Trim leading and trailing dots/underscores and enforce max length
+        filename = filename.strip("_.")[:255]
+        # Final cleanup of redundant underscores
+        filename = re.sub(r"_+", "_", filename)
 
-            self.log.info(
-                f"Image Found:\n- Filename: {image_obj.filename}\n"
-                f"- Size: {image_obj.metadata.size} bytes"
-            )
-            self.log.info(f"Media Object: {image_obj}")
-            return (image_obj, None)
+        return filename
 
+    async def _handle_image(self, url):
+        image_data = await self._download_image(url)
+        if not image_data:
+            self.log.warning(
+                f"MediaHandler.process_url._handle_image: Failed to fetch image from {url}"
+            )
+            return None
+
+        if isinstance(image_data, BytesIO):
+            image_metadata = (
+                await self._get_stream_metadata(image_data.getvalue()) or {}
+            )
+        else:
+            self.log.warning(
+                "MediaHandler.process_url._handle_image: Downloading outside of stdout is not yet supported."
+            )
+            return None
+
+        filename = self._generate_filename(url)
+        extension = filename.rsplit(".", 1)[-1] if "." in filename else "jpg"
+
+        media_object = MediaFile(
+            filename=filename,
+            stream=image_data,
+            metadata=MediaInfo(
+                url=url,
+                id=None,
+                title=None,
+                uploader=None,
+                ext=extension,
+                extractor=None,
+                duration=image_metadata.get("duration", 0),
+                width=image_metadata.get("width", 0),
+                height=image_metadata.get("height", 0),
+                size=image_metadata.get("size", 0),
+                has_video=image_metadata.get("has_video", False),
+                has_audio=image_metadata.get("has_audio", False),
+                is_image=image_metadata.get("is_image", False),
+            ),
+        )
+
+        return media_object
+
+    async def _handle_non_image(self, url):
         commands = self._create_ytdlp_commands(url)
         if not commands:
-            self.log.warning("MediaHandler.process_url: Invalid command, check config.")
-            raise Exception("No valid yt-dlp commands found in configuration.")
+            self.log.warning(
+                "MediaHandler.process_url._handle_non_image: No valid yt-dlp commands found in configuration."
+            )
+            return None
 
         query_commands, download_commands = commands[0], commands[1]
 
-        media_ytdlp_metadata = await self._ytdlp_execute_query(commands=query_commands)
-        if not media_ytdlp_metadata:
+        ytdlp_metadata = await self._ytdlp_execute_query(commands=query_commands)
+        if not ytdlp_metadata:
             self.log.warning(
-                "MediaHandler.process_url: Failed to find media with yt_dlp"
+                "MediaHandler.process_url._handle_non_image: Failed to retrieve metadata from yt-dlp."
             )
-            raise Exception("Failed to retrieve metadata from yt-dlp.")
+            return None
 
-        is_live = media_ytdlp_metadata.get("is_live", False)
+        is_live = ytdlp_metadata.get("is_live", False)
         media_stream_data: Optional[Union[BytesIO, str]] = None
 
         if is_live and not self.config.ffmpeg.get("enable_livestream_previews", False):
             self.log.warning(
-                "MediaHandler.process_url: Live media detected, but livestream previews are disabled."
+                "MediaHandler.process_url._handle_non_image: Live media detected, but livestream previews are disabled."
             )
-            raise Exception("Livestream processing is disabled in configuration.")
+            return None
+
         elif is_live:
             media_stream_data = await self._ffmpeg_livestream_capture(
-                stream_url=media_ytdlp_metadata["url"]
+                stream_url=ytdlp_metadata["url"]
             )
             if not media_stream_data:
                 self.log.warning(
-                    "MediaHandler.process_url: Failed to download live stream."
+                    "MediaHandler.process_url._handle_non_image: Failed to download live stream."
                 )
-                raise Exception("Failed to download live stream.")
+                return None
 
         else:
-            duration = media_ytdlp_metadata.get("duration")
+            duration = ytdlp_metadata.get("duration")
             if duration is not None:
                 if duration > self.config.file.get("max_duration", 0):
                     self.log.warning(
-                        "MediaHandler.process_url: Media length exceeds the configured duration limit."
+                        "MediaHandler.process_url._handle_non_image: Media length exceeds the configured duration limit."
                     )
-                    raise Exception("Media duration exceeds the configured maximum.")
+                    return None
             else:
                 self.log.warning(
-                    "MediaHandler.process_url: Media duration is missing from metadata. "
+                    "MediaHandler.process_url._handle_non_image: Media duration is missing from metadata. "
                     "Attempting to download the stream anyway."
                 )
 
@@ -711,183 +772,224 @@ class MediaProcessor:
 
         if not media_stream_data:
             self.log.warning(
-                "MediaHandler.process_url: Failed to download media stream."
+                "MediaHandler.process_url._handle_non_image: Failed to download media stream."
             )
-            raise Exception("Failed to download media stream.")
+            return None
 
         if isinstance(media_stream_data, BytesIO):
             media_stream_metadata = (
                 await self._get_stream_metadata(media_stream_data.getvalue()) or {}
             )
         else:
-            raise Exception("Downloading outside of stdout is not yet supported.")
+            self.log.warning(
+                "MediaHandler.process_url._handle_non_image: Downloading outside of stdout is not yet supported."
+            )
+            return None
 
-        filename = "{title}-{uploader}-{extractor}-{id}.{ext}".format(
-            title=media_ytdlp_metadata.get("title", "unknown_title"),
-            uploader=media_ytdlp_metadata.get("uploader", "unknown_uploader"),
-            extractor=media_ytdlp_metadata.get("extractor", "unknown_platform"),
-            id=media_ytdlp_metadata["id"],
-            ext=media_ytdlp_metadata.get("ext", "unknown_extension"),
-        )
-        filename = (
-            unicodedata.normalize("NFKD", filename)
-            .encode("ASCII", "ignore")
-            .decode("ASCII")
-        )
-        filename = re.sub(r'[<>:"/\\|?*\x00-\x1F\'’“”]', "_", filename)
-        filename = re.sub(r"\s+", "_", filename)
-        filename = re.sub(r"__+", "_", filename)
-        filename = filename.strip("_.")[:255]
-        filename = re.sub(r"_+", "_", filename)
+        filename = self._generate_filename(url, ytdlp_metadata=ytdlp_metadata)
 
-        media_obj = Media(
+        media_object = MediaFile(
             filename=filename,
             stream=media_stream_data,
-            metadata=MediaMetadata(
-                url=media_ytdlp_metadata["url"],
-                id=media_ytdlp_metadata["id"],
-                title=media_ytdlp_metadata.get("title"),
-                uploader=media_ytdlp_metadata.get("uploader"),
-                ext=media_ytdlp_metadata.get("ext"),
-                extractor=media_ytdlp_metadata.get("extractor"),
-                duration=media_stream_metadata.get("duration"),
-                width=media_stream_metadata.get("width"),
-                height=media_stream_metadata.get("height"),
-                size=media_stream_metadata.get("size"),
+            metadata=MediaInfo(
+                url=ytdlp_metadata["url"],
+                id=ytdlp_metadata.get("id"),
+                thumbnail_url=ytdlp_metadata.get("thumbnail", None),
+                title=ytdlp_metadata.get("title", url),
+                uploader=ytdlp_metadata.get("uploader", "unknown_uploader"),
+                ext=ytdlp_metadata.get("ext", "mp4"),
+                extractor=ytdlp_metadata.get("extractor"),
+                duration=media_stream_metadata.get("duration", 0),
+                width=media_stream_metadata.get("width", 0),
+                height=media_stream_metadata.get("height", 0),
+                size=media_stream_metadata.get("size", 0),
                 has_video=media_stream_metadata.get("has_video", False),
                 has_audio=media_stream_metadata.get("has_audio", False),
                 is_image=media_stream_metadata.get("is_image", False),
             ),
         )
 
-        thumbnail: Optional[Media] = None
-        thumbnail_url = media_ytdlp_metadata.get("thumbnail")
-        if thumbnail_url:
-            thumb_data = await self._download_image(thumbnail_url)
-            if isinstance(thumb_data, BytesIO):
-                image_metadata = (
-                    await self._get_stream_metadata(thumb_data.getvalue()) or {}
+        return media_object
+
+    async def process_url(self, url: str) -> Optional[Media]:
+        parsed_url = urlparse(url)
+        domain = parsed_url.netloc.split(":")[0]
+
+        primary_file_object = None
+        thumbnail_file_object = None
+
+        try:
+            primary_file_object = await self._handle_non_image(url)
+            if primary_file_object and primary_file_object.metadata.thumbnail_url:
+                thumbnail_file_object = await self._handle_image(
+                    primary_file_object.metadata.thumbnail_url
                 )
-            else:
-                raise Exception("Downloading outside of stdout is not yet supported.")
-            if thumb_data:
-                thumb_metadata = await self._get_stream_metadata(thumb_data.getvalue())
-                if thumb_metadata:
-                    thumb_ext = self._get_extension_from_url(thumbnail_url)
-                    thumbnail = Media(
-                        filename=media_ytdlp_metadata["id"] + "_thumbnail" + thumb_ext,
-                        stream=thumb_data,
-                        metadata=MediaMetadata(
-                            url=thumbnail_url,
-                            id=media_ytdlp_metadata["id"],
-                            uploader=media_ytdlp_metadata.get("uploader"),
-                            ext=thumb_ext,
-                            width=thumb_metadata.get("width"),
-                            height=thumb_metadata.get("height"),
-                            size=thumb_metadata.get("size"),
-                            has_video=thumb_metadata.get("has_video", False),
-                            has_audio=thumb_metadata.get("has_audio", False),
-                            is_image=thumb_metadata.get("is_image", False),
-                        ),
+                if thumbnail_file_object:
+                    ext = (
+                        thumbnail_file_object.metadata.ext
+                        if thumbnail_file_object.metadata.ext
+                        else "jpg"
                     )
+                    thumbnail_file_object.filename = (
+                        f"{primary_file_object.filename}.{ext}"
+                    )
+                    thumbnail_file_object.metadata.uploader = (
+                        primary_file_object.metadata.uploader
+                    )
+                    thumbnail_file_object.metadata.id = primary_file_object.metadata.id
                 else:
                     self.log.warning(
                         "MediaHandler.process_url: Failed to fetch thumbnail metadata."
                     )
-            else:
-                self.log.warning(
-                    "MediaHandler.process_url: Failed to download thumbnail."
-                )
+        except Exception as e:
+            self.log.warning("Failed to download media, trying as image.")
 
-        # Log final info
-        has_video = media_stream_metadata.get("has_video", False)
-        has_audio = media_stream_metadata.get("has_audio", False)
-        is_image = media_stream_metadata.get("is_image", False)
+            is_image = self._is_image(url)
+            if is_image:
+                primary_file_object = await self._handle_image(url)
+                if primary_file_object:
+                    primary_file_object.metadata.title = url
+                    primary_file_object.metadata.uploader = "Unknown Uploader"
+                    primary_file_object.metadata.extractor = domain
+                    primary_file_object.metadata.id = str(
+                        uuid.uuid5(uuid.NAMESPACE_URL, url)
+                    )
 
-        if is_image:
-            self.log.info(
-                f"Image Found:\n- Filename: {media_obj.filename}\n"
-                f"- Size: {media_obj.metadata.size} bytes"
-            )
-        elif has_video:
-            self.log.info(
-                f"Video Found:\n- Title: {media_obj.metadata.title}\n"
-                f"- Uploader: {media_obj.metadata.uploader}\n"
-                f"- Resolution: {media_obj.metadata.width}x{media_obj.metadata.height}\n"
-                f"- Duration: {media_obj.metadata.duration}s\n"
-                f"- Size: {media_obj.metadata.size} bytes"
-            )
-        elif has_audio:
-            self.log.info(
-                f"Audio Found:\n- Title: {media_obj.metadata.title}\n"
-                f"- Uploader: {media_obj.metadata.uploader}\n"
-                f"- Duration: {media_obj.metadata.duration}s\n"
-                f"- Size: {media_obj.metadata.size} bytes"
-            )
-        else:
-            self.log.info(
-                f"Unknown media type:\n- Title: {media_obj.metadata.title}\n"
-                f"- Size: {media_obj.metadata.size} bytes"
-            )
+        if not primary_file_object:
+            self.log.warning("MediaHandler.process_url: Failed to download file.")
+            return None
 
-        if thumbnail:
-            self.log.info(
-                f"Thumbnail Found:\n- Resolution: {thumbnail.metadata.width}x{thumbnail.metadata.height}\n"
-                f"- Size: {thumbnail.metadata.size} bytes"
+        media_type = (
+            "Video"
+            if primary_file_object.metadata.has_video
+            else (
+                "Audio"
+                if primary_file_object.metadata.has_audio
+                else "Image" if primary_file_object.metadata.is_image else "Unknown"
             )
+        )
 
-        return (media_obj, thumbnail)
+        self.log.info(
+            f"Media Found:\n-Filename: {primary_file_object.filename}\n"
+            f"- Size: {primary_file_object.metadata.size} bytes"
+            f"- Media type: {media_type}"
+        )
+
+        media_object = Media(
+            content=primary_file_object, thumbnail=thumbnail_file_object
+        )
+
+        return media_object
 
 
 class SynapseProcessor:
-    def __init__(self, log, client):
+    def __init__(self, log: "TraceLogger", client: "MaubotMatrixClient"):
         self.log = log
         self.client = client
 
     async def _is_reacted(
-        self, room_id, event_id, reaction: str
-    ) -> Tuple[bool, Optional[str]]:
+        self, room_id: "RoomID", event_id: "EventID", reaction: str
+    ) -> Tuple[bool, Optional["EventID"]]:
         try:
             response = await self.client.get_event_context(
-                room_id=room_id, event_id=event_id, limit=4
+                room_id=room_id, event_id=event_id, limit=10
             )
-            for event in response.events_after:
-                content = getattr(event, "content", None)
-                if content:
-                    relates_to = getattr(content, "relates_to", None)
-                    if relates_to:
-                        if (
-                            relates_to.rel_type == RelationType.ANNOTATION
-                            and relates_to.event_id == event_id
-                            and relates_to.key == reaction
-                            and event.sender == self.client.mxid
-                        ):
-                            return True, event.event_id
-            return False, None
+            if not response:
+                return False, None
+
+            reaction_event = next(
+                (
+                    event
+                    for event in response.events_after
+                    if isinstance(event, ReactionEvent)
+                    and (relates_to := getattr(event.content, "relates_to", None))
+                    and relates_to.rel_type == RelationType.ANNOTATION
+                    and relates_to.event_id == event_id
+                    and relates_to.key == reaction
+                    and event.sender == self.client.mxid
+                ),
+                None,
+            )
+
+            return (True, reaction_event.event_id) if reaction_event else (False, None)
+
         except Exception as e:
             self.log.error(f"Failed to fetch reaction event: {e}")
             return False, None
 
-    async def reaction_handler(self, event) -> None:
+    async def reaction_handler(self, event: "MaubotMessageEvent") -> None:
         is_reacted, reaction_id = await self._is_reacted(
             room_id=event.room_id, event_id=event.event_id, reaction="🔄"
         )
-        if not is_reacted:
-            await event.react(key="🔄")
-        if is_reacted:
-            await self.client.redact(room_id=event.room_id, event_id=reaction_id)
-
-    async def upload_to_content_repository(self, data, filename, size) -> str | None:
-        response = await self.client.upload_media(
-            data=data,
-            filename=filename,
-            size=size,
-        )
-        uri = response
-        if not uri:
+        try:
+            if not is_reacted:
+                await event.react(key="🔄")
+            elif is_reacted and reaction_id:
+                await self.client.redact(room_id=event.room_id, event_id=reaction_id)
+        except Exception as e:
             self.log.error(
-                f"SynapseHandler.upload_to_content_repository: uri not obtained"
+                f"SynapseProcessor.reaction_handler: Failed to handle reaction: {e}"
             )
-            raise Exception
 
-        return uri
+    async def _bytes_io_to_async_iter(
+        self, stream: BytesIO, chunk_size: int = 4096
+    ) -> AsyncIterable[bytes]:
+        while chunk := stream.read(chunk_size):
+            yield chunk
+
+    async def upload_to_content_repository(
+        self, data: BytesIO, filename: str, size: int
+    ):
+        async_upload = size > 10 * 1024 * 1024  # Files larger than 10MB
+
+        upload_data = (
+            self._bytes_io_to_async_iter(data) if async_upload else data.read()
+        )
+
+        if async_upload:
+            task = asyncio.create_task(
+                self.client.upload_media(
+                    data=upload_data,
+                    filename=filename,
+                    size=size,
+                    async_upload=True,
+                )
+            )
+            self.log.info(f"Async upload initiated for {filename} (size: {size} bytes)")
+            return task
+
+        else:
+            response = await self.client.upload_media(
+                data=upload_data,
+                filename=filename,
+                size=size,
+                async_upload=False,
+            )
+            return response
+
+    # async def upload_to_content_repository(
+    #     self, data: BytesIO, filename: str, size: int
+    # ) -> str | None:
+    #     async_upload = size > 10 * 1024 * 1024  # Files larger than 10MB
+
+    #     upload_data = (
+    #         self._bytes_io_to_async_iter(data) if async_upload else data.read()
+    #     )
+
+    #     response = await self.client.upload_media(
+    #         data=upload_data,
+    #         filename=filename,
+    #         size=size,
+    #         async_upload=async_upload,
+    #     )
+
+    #     if not response:
+    #         self.log.error(
+    #             "SynapseProcessor.upload_to_content_repository: URI not obtained."
+    #         )
+    #         return None
+
+    #     if async_upload:
+    #         self.log.info(f"Async upload initiated for {filename} (size: {size} bytes)")
+
+    #         return response

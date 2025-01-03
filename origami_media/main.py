@@ -8,6 +8,7 @@ from mautrix.types import EventType
 from mautrix.util.config import BaseProxyConfig, ConfigUpdateHelper
 
 from .dependency_handler import DependencyHandler
+from .display_handler import DisplayHandler
 from .media_handler import MediaHandler
 from .url_handler import UrlHandler
 
@@ -61,14 +62,21 @@ class OrigamiMedia(Plugin):
         self.dependency_handler = DependencyHandler(log=self.log)
         self.url_handler = UrlHandler(log=self.log, config=self.config)
         self.media_handler = MediaHandler(
-            log=self.log, client=self.client, config=self.config
+            log=self.log,
+            config=self.config,
+            client=self.client,
         )
-        self.valid_urls = asyncio.Queue()
+        self.display_handler = DisplayHandler(
+            log=self.log, config=self.config, client=self.client
+        )
         self.event_queue = asyncio.Queue(maxsize=self.config.queue.get("max_size", 100))
+        self.url_event_queue = asyncio.Queue()
+        self.media_event_queue = asyncio.Queue()
 
         self.workers = [
-            asyncio.create_task(self._message_worker()),
-            asyncio.create_task(self._pipeline_worker()),
+            asyncio.create_task(self._url_worker()),
+            asyncio.create_task(self._media_worker()),
+            asyncio.create_task(self._display_worker()),
         ]
 
     @classmethod
@@ -93,41 +101,85 @@ class OrigamiMedia(Plugin):
         except asyncio.QueueFull:
             self.log.warning("Message queue is full. Dropping incoming message.")
 
-    async def _message_worker(self) -> None:
+    async def _url_worker(self) -> None:
         while True:
             try:
                 event = await self.event_queue.get()
+                self.log.info(
+                    f"[url Worker] Sending event to url_handler: {event.event_id}"
+                )
                 valid_urls, event = await self.url_handler.process(event)
                 if valid_urls:
-                    for url in valid_urls:
-                        await self.valid_urls.put((url, event))
-                    self.log.info(f"[Message Worker] Stored valid URLs: {valid_urls}")
+                    processed_url_event = (valid_urls, event)
+                    self.log.info(
+                        f"[url Worker] Extracted valid urls: {valid_urls} for {event.event_id}"
+                    )
+                    await self.url_event_queue.put(processed_url_event)
                 else:
-                    self.log.info("[Message Worker] No valid URLs found.")
+                    self.log.info(
+                        f"[url Worker] No valid urls were found for {event.event_id}"
+                    )
             except asyncio.CancelledError:
-                self.log.info("[Message Worker] Shutting down gracefully.")
-                break
-            except Exception as e:
-                self.log.error(f"[Message Worker] Error: {e}")
-            finally:
-                self.event_queue.task_done()
-
-    async def _pipeline_worker(self) -> None:
-        while True:
-            try:
-                item = await self.valid_urls.get()
-                url, event = item
-                self.log.info(f"[Pipeline Worker] Sending URL to MediaPipeline: {url}")
-                await self.media_handler.process(event=event, url=url)
-            except asyncio.CancelledError:
-                self.log.info("[Pipeline Worker] Shutting down gracefully.")
+                self.log.info("[url Worker] Shutting down gracefully.")
                 break
             except Exception as e:
                 self.log.error(
-                    f"[Pipeline Worker] Failed to process URL {url} in MediaPipeline: {e}"
+                    f"[url Worker] Failed to extract urls for {event.event_id} in url_handler: {e}"
                 )
             finally:
-                self.valid_urls.task_done()
+                self.event_queue.task_done()
+
+    async def _media_worker(self) -> None:
+        while True:
+            try:
+                processed_url_event = await self.url_event_queue.get()
+                valid_urls, event = processed_url_event
+                self.log.info(
+                    f"[Media Worker] Sending valid urls to media_handler: {valid_urls} for {event.event_id}"
+                )
+                processed_media_list, event = await self.media_handler.process(
+                    urls=valid_urls, event=event
+                )
+                if processed_media_list:
+                    processed_media_event = (processed_media_list, event)
+                    self.log.info(
+                        f"[Media Worker] Uploaded media: {processed_media_list} for {event.event_id}"
+                    )
+                    await self.media_event_queue.put(processed_media_event)
+                else:
+                    self.log.info(
+                        f"[url Worker] No media was processed for {event.event_id}"
+                    )
+            except asyncio.CancelledError:
+                self.log.info("[Media Worker] Shutting down gracefully.")
+                break
+            except Exception as e:
+                self.log.error(
+                    f"[Media Worker] Failed to process media for {event.event_id} in media_handler: {e}"
+                )
+            finally:
+                self.url_event_queue.task_done()
+
+    async def _display_worker(self) -> None:
+        while True:
+            try:
+                processed_media_event = await self.media_event_queue.get()
+                processed_media_list, event = processed_media_event
+                self.log.info(
+                    f"[Display Worker] Sending processed_media_list to display_handler: {processed_media_list} for {event.event_id}"
+                )
+                await self.display_handler.render(
+                    media=processed_media_list, event=event
+                )
+            except asyncio.CancelledError:
+                self.log.info("[Display Worker] Shutting down gracefully.")
+                break
+            except Exception as e:
+                self.log.error(
+                    f"[Display Worker] Failed to render display for {event.event_id} in display_handler: {e}"
+                )
+            finally:
+                self.media_event_queue.task_done()
 
     async def stop(self) -> None:
         self.log.info("Shutting down workers...")
