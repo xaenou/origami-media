@@ -28,71 +28,59 @@ class MediaHandler:
         self.client = client
         self.config = config
         self.media_processor = MediaProcessor(log=self.log, config=self.config)
-        self.synapse_processor = SynapseProcessor(log=self.log, client=self.client)
+        self.synapse_processor = SynapseProcessor(
+            log=self.log, client=self.client, config=self.config
+        )
 
     async def _upload_media(
         self, media_object: "Media"
     ) -> Tuple[Optional[str], Optional[str]]:
-        content_stream_consumed = False
-        thumbnail_stream_consumed = False
 
+        content_upload_result = None
+        thumbnail_upload_result = None
         try:
-            if isinstance(media_object.content.stream, BytesIO):
-                media_object.content.stream.seek(0)
+            for media_part, result_variable in [
+                (media_object.content, "content_upload_result"),
+                (media_object.thumbnail, "thumbnail_upload_result"),
+            ]:
+                if not media_part:
+                    continue
 
-            content_upload_result = (
-                await self.synapse_processor.upload_to_content_repository(
-                    data=media_object.content.stream,
-                    filename=media_object.content.filename,
-                    size=media_object.content.metadata.size or 0,
-                )
-            )
-            content_stream_consumed = True
+                stream = media_part.stream
+                filename = media_part.filename
+                size = media_part.metadata.size or 0
 
-            if isinstance(content_upload_result, asyncio.Task):
-                await content_upload_result
-                content_upload_result = content_upload_result.result()
+                if isinstance(stream, BytesIO):
+                    stream.seek(0)
 
-            if not content_upload_result:
-                self.log.warning(
-                    f"Failed to upload content for file: {media_object.content.filename}"
-                )
-                return None, None
-
-            thumbnail_upload_result = None
-            if media_object.thumbnail:
-                if isinstance(media_object.thumbnail.stream, BytesIO):
-                    media_object.thumbnail.stream.seek(0)
-
-                thumbnail_upload_result = (
+                upload_result = (
                     await self.synapse_processor.upload_to_content_repository(
-                        data=media_object.thumbnail.stream,
-                        filename=media_object.thumbnail.filename,
-                        size=media_object.thumbnail.metadata.size or 0,
+                        data=stream,
+                        filename=filename,
+                        size=size,
                     )
                 )
-                thumbnail_stream_consumed = True
 
-                if isinstance(thumbnail_upload_result, asyncio.Task):
-                    await thumbnail_upload_result
-                    thumbnail_upload_result = thumbnail_upload_result.result()
+                if isinstance(upload_result, asyncio.Task):
+                    await upload_result
+                    upload_result = upload_result.result()
 
-                if not thumbnail_upload_result:
-                    self.log.warning("Thumbnail failed to upload to homeserver.")
+                if not upload_result:
+                    self.log.warning(
+                        f"MediaHandler._upload_media: Failed to upload file: {filename}"
+                    )
+
+                if result_variable == "content_upload_result":
+                    content_upload_result = upload_result
+                else:
+                    thumbnail_upload_result = upload_result
 
             return content_upload_result, thumbnail_upload_result
 
         finally:
-            if not content_stream_consumed and isinstance(
-                media_object.content.stream, BytesIO
-            ):
-                media_object.content.stream.close()
-            if (
-                media_object.thumbnail
-                and not thumbnail_stream_consumed
-                and isinstance(media_object.thumbnail.stream, BytesIO)
-            ):
-                media_object.thumbnail.stream.close()
+            for media_part in [media_object.content, media_object.thumbnail]:
+                if media_part and isinstance(media_part.stream, BytesIO):
+                    media_part.stream.close()
 
     async def process(
         self, urls: list[str], event: "MaubotMessageEvent"
@@ -106,11 +94,14 @@ class MediaHandler:
                 url
             )
             if not media_object:
-                self.log.warning(f"Failed to process URL: {url}")
+                self.log.warning(f"MediaHandler.process: Failed to process URL: {url}")
                 continue
 
             media_uri, thumbnail_uri = await self._upload_media(media_object)
             if not media_uri:
+                self.log.warning(
+                    f"MediaHandler.process: Failed to upload content for URL: {url}"
+                )
                 continue
 
             processed_media_array.append(
@@ -136,59 +127,3 @@ class MediaHandler:
             return (None, event)
 
         return (processed_media_array, event)
-
-    # async def _upload_media(
-    #     self, media_object: "Media"
-    # ) -> Tuple[Optional[str], Optional[str]]:
-    #     content_stream_consumed = False
-    #     thumbnail_stream_consumed = False
-
-    #     try:
-    #         if isinstance(media_object.content.stream, BytesIO):
-    #             media_object.content.stream.seek(0)
-
-    #         media_uri = await self.synapse_processor.upload_to_content_repository(
-    #             data=media_object.content.stream,
-    #             filename=media_object.content.filename,
-    #             size=media_object.content.metadata.size or 0,
-    #         )
-    #         content_stream_consumed = True
-
-    #         if not media_uri:
-    #             self.log.warning(
-    #                 f"MediaHandler._upload_media: Failed to upload content for file: {media_object.content.filename}"
-    #             )
-    #             return None, None
-
-    #         thumbnail_uri = None
-    #         if media_object.thumbnail:
-    #             if isinstance(media_object.thumbnail.stream, BytesIO):
-    #                 media_object.thumbnail.stream.seek(0)
-
-    #             thumbnail_uri = (
-    #                 await self.synapse_processor.upload_to_content_repository(
-    #                     data=media_object.thumbnail.stream,
-    #                     filename=media_object.thumbnail.filename,
-    #                     size=media_object.thumbnail.metadata.size or 0,
-    #                 )
-    #             )
-    #             thumbnail_stream_consumed = True
-
-    #             if not thumbnail_uri:
-    #                 self.log.warning(
-    #                     "MediaHandler._upload_media: Thumbnail failed to upload to homeserver."
-    #                 )
-
-    #         return media_uri, thumbnail_uri
-
-    #     finally:
-    #         if not content_stream_consumed and isinstance(
-    #             media_object.content.stream, BytesIO
-    #         ):
-    #             media_object.content.stream.close()
-    #         if (
-    #             media_object.thumbnail
-    #             and not thumbnail_stream_consumed
-    #             and isinstance(media_object.thumbnail.stream, BytesIO)
-    #         ):
-    #             media_object.thumbnail.stream.close()

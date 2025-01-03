@@ -44,6 +44,7 @@ file:
   max_in_memory_file_size: 104857600 # bytes
   max_file_size: 104857600 # bytes
   max_retries: 1 # Not yet implemented
+  async_upload: false # Experimental
 
 queue:
   max_size: 12

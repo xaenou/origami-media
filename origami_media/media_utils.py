@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import mimetypes
 import os
 import re
 import shlex
@@ -30,20 +31,61 @@ class MediaProcessor:
         self.config = config
         self.log = log
 
+    def _is_image_magic_number(self, data: bytes) -> bool:
+        """
+        Check the first few bytes of a file for common image format signatures.
+        """
+        if data.startswith(b"\xFF\xD8\xFF"):  # JPEG
+            return True
+        if data.startswith(b"\x89PNG\r\n\x1a\n"):  # PNG
+            return True
+        if data.startswith(b"GIF87a") or data.startswith(b"GIF89a"):  # GIF
+            return True
+        if data.startswith(b"\x49\x49\x2A\x00") or data.startswith(
+            b"\x4D\x4D\x00\x2A"
+        ):  # TIFF
+            return True
+        if data.startswith(b"\x42\x4D"):  # BMP
+            return True
+        if data.startswith(b"\x00\x00\x01\x00") or data.startswith(
+            b"\x00\x00\x02\x00"
+        ):  # ICO
+            return True
+        if data.startswith(b"RIFF") and b"WEBP" in data:  # WEBP
+            return True
+        if data.startswith(b"\x1A\x45\xDF\xA3"):  # WebM (EBML Header)
+            return True
+
+        return False
+
     async def _is_image(self, url: str) -> bool:
         try:
             timeout = ClientTimeout(total=10)
             async with ClientSession(timeout=timeout) as session:
                 async with session.head(url, allow_redirects=True) as response:
                     ctype = response.headers.get("Content-Type", "").lower()
-                    self.log.debug(f"HEAD Content-Type for {url}: {ctype}")
+                    self.log.debug(
+                        f"MediaProcessor._is_image: HEAD Content-Type for {url}: {ctype}"
+                    )
                     if ctype.startswith("image/"):
                         return True
-                    else:
-                        return False
+
+                async with session.get(url, allow_redirects=True) as response:
+                    ctype = response.headers.get("Content-Type", "").lower()
+                    if ctype.startswith("image/"):
+                        return True
+
+                    first_bytes = await response.content.read(12)
+                    if self._is_image_magic_number(first_bytes):
+                        return True
+
         except Exception as e:
-            self.log.warning(f"Failed HEAD request on {url}, ignoring: {e}")
+            self.log.warning(
+                f"MediaProcessor._is_image: Failed to determine if URL is an image ({url}): {e}"
+            )
             return False
+
+        return False
 
     def _create_ytdlp_commands(self, url: str) -> Tuple[List[dict], List[dict]]:
         commands = self.config.ytdlp.get("presets", [])
@@ -108,11 +150,15 @@ class MediaProcessor:
             command = command_entry.get("command")
 
             if not command:
-                self.log.warning(f"Skipping empty command entry: {name}")
+                self.log.warning(
+                    f"MediaProcessor._ytdlp_execute_query: Skipping empty command entry: {name}"
+                )
                 continue
 
             try:
-                self.log.info(f"Running yt-dlp command: {name} → {command}")
+                self.log.info(
+                    f"MediaProcessor._ytdlp_execute_query: Running yt-dlp command: {name} → {command}"
+                )
                 process = await asyncio.create_subprocess_shell(
                     command, stdout=subprocess.PIPE, stderr=subprocess.PIPE
                 )
@@ -122,11 +168,13 @@ class MediaProcessor:
 
                 if process.returncode != 0:
                     error_message = stderr.decode().strip()
-                    self.log.warning(f"{name} failed: {error_message}")
+                    self.log.warning(
+                        f"MediaProcessor._ytdlp_execute_query: {name} failed: {error_message}"
+                    )
 
                     if "403" in error_message or "404" in error_message:
                         self.log.error(
-                            f"{name}: Non-retryable error detected. Stopping retries."
+                            f"MediaProcessor._ytdlp_execute_query: {name}: Non-retryable error detected. Stopping retries."
                         )
                         break
 
@@ -134,23 +182,35 @@ class MediaProcessor:
 
                 output = stdout.decode().strip()
                 if not output:
-                    self.log.warning(f"{name} produced empty output.")
+                    self.log.warning(
+                        f"MediaProcessor._ytdlp_execute_query: {name} produced empty output."
+                    )
                     continue
 
                 return json.loads(output)
 
             except json.JSONDecodeError as e:
-                self.log.error(f"{name} failed to parse JSON output: {e}")
+                self.log.error(
+                    f"MediaProcessor._ytdlp_execute_query: {name} failed to parse JSON output: {e}"
+                )
             except asyncio.TimeoutError:
-                self.log.error(f"{name}: Command timed out. Killing process.")
+                self.log.error(
+                    f"MediaProcessor._ytdlp_execute_query: {name}: Command timed out. Killing process."
+                )
                 process.kill()
                 await process.wait()
             except ClientError as e:
-                self.log.warning(f"{name} encountered a network error: {e}")
+                self.log.warning(
+                    f"MediaProcessor._ytdlp_execute_query: {name} encountered a network error: {e}"
+                )
             except Exception as e:
-                self.log.exception(f"{name} encountered an error: {e}")
+                self.log.exception(
+                    f"MediaProcessor._ytdlp_execute_query: {name} encountered an error: {e}"
+                )
 
-        self.log.error("All yt-dlp commands (including fallbacks) failed.")
+        self.log.error(
+            "MediaProcessor._ytdlp_execute_query: All yt-dlp commands (including fallbacks) failed."
+        )
         return None
 
     async def _ytdlp_execute_download(
@@ -161,12 +221,14 @@ class MediaProcessor:
             command = command_entry.get("command")
 
             if not command:
-                self.log.warning(f"Skipping empty download command: {name}")
+                self.log.warning(
+                    f"MediaProcessor._ytdlp_execute_download: Skipping empty download command: {name}"
+                )
                 continue
 
             try:
                 self.log.info(
-                    f"[DEBUG] Executing yt-dlp download command: {name} → {command}"
+                    f"MediaProcessor._ytdlp_execute_download: Executing yt-dlp download command: {name} → {command}"
                 )
 
                 process = await asyncio.create_subprocess_shell(
@@ -177,7 +239,7 @@ class MediaProcessor:
 
                 if process.stdout is None:
                     self.log.error(
-                        f"{name}: Process stdout is None, cannot proceed with download."
+                        f"MediaProcessor._ytdlp_execute_download: {name}: Process stdout is None, cannot proceed with download."
                     )
                     await process.wait()
                     return None
@@ -204,7 +266,7 @@ class MediaProcessor:
 
                     if max_file_size > 0 and total_size > max_file_size:
                         self.log.error(
-                            f"{name}: File size limit exceeded ({total_size} > {max_file_size} bytes)."
+                            f"MediaProcessor._ytdlp_execute_download: {name}: File size limit exceeded ({total_size} > {max_file_size} bytes)."
                         )
                         process.kill()
                         await process.wait()
@@ -220,25 +282,31 @@ class MediaProcessor:
                         if stderr
                         else "No error message captured."
                     )
-                    self.log.warning(f"{name} download failed: {error_message}")
+                    self.log.warning(
+                        f"MediaProcessor._ytdlp_execute_download: {name} download failed: {error_message}"
+                    )
 
                     if "403" in error_message or "404" in error_message:
                         self.log.error(
-                            f"{name}: Non-retryable error detected. Stopping retries."
+                            f"MediaProcessor._ytdlp_execute_download: {name}: Non-retryable error detected. Stopping retries."
                         )
                         break
                     continue
 
                 if total_size == 0:
-                    self.log.warning(f"{name}: Downloaded data is empty.")
+                    self.log.warning(
+                        f"MediaProcessor._ytdlp_execute_download: {name}: Downloaded data is empty."
+                    )
                     return None
 
                 video_data.seek(0)
 
                 if in_memory:
-                    self.log.info("[DEBUG] Saving output to memory (BytesIO)")
                     self.log.info(
-                        f"[DEBUG] Final BytesIO size: {video_data.getbuffer().nbytes} bytes"
+                        "MediaProcessor._ytdlp_execute_download: Saving output to memory (BytesIO)"
+                    )
+                    self.log.info(
+                        f"MediaProcessor._ytdlp_execute_download: Final BytesIO size: {video_data.getbuffer().nbytes} bytes"
                     )
                     return video_data
 
@@ -246,28 +314,34 @@ class MediaProcessor:
                     resolved_path = os.path.abspath(output_path)
                     if os.path.exists(resolved_path):
                         self.log.info(
-                            f"{name}: Video downloaded successfully to '{resolved_path}'."
+                            f"MediaProcessor._ytdlp_execute_download: {name}: Video downloaded successfully to '{resolved_path}'."
                         )
                         return resolved_path
                     else:
                         self.log.warning(
-                            f"{name}: Expected output file '{resolved_path}' does not exist."
+                            f"MediaProcessor._ytdlp_execute_download: {name}: Expected output file '{resolved_path}' does not exist."
                         )
                         continue
 
             except asyncio.TimeoutError:
-                self.log.warning(f"{name}: Download timed out.")
+                self.log.warning(
+                    f"MediaProcessor._ytdlp_execute_download: {name}: Download timed out."
+                )
             except Exception as e:
-                self.log.exception(f"{name}: An unexpected error occurred: {e}")
+                self.log.exception(
+                    f"MediaProcessor._ytdlp_execute_download: {name}: An unexpected error occurred: {e}"
+                )
             finally:
                 if process.returncode is None:
                     self.log.warning(
-                        f"{name}: Process still running. Forcing termination."
+                        f"MediaProcessor._ytdlp_execute_download: {name}: Process still running. Forcing termination."
                     )
                     process.kill()
                     await process.wait()
 
-        self.log.error("All yt-dlp download commands (including fallbacks) failed.")
+        self.log.error(
+            "MediaProcessor._ytdlp_execute_download: All yt-dlp download commands (including fallbacks) failed."
+        )
         return None
 
     async def _ffmpeg_livestream_capture(
@@ -295,7 +369,7 @@ class MediaProcessor:
                 command_parts.append("pipe:1")
 
             self.log.info(
-                f"[INFO] Running FFmpeg (in-memory) with args:\n{' '.join(command_parts)}"
+                f"MediaProcessor._ffmpeg_livestream_capture: Running FFmpeg (in-memory) with args:\n{' '.join(command_parts)}"
             )
 
             process = await asyncio.create_subprocess_shell(
@@ -306,7 +380,7 @@ class MediaProcessor:
 
             if process.stdout is None:
                 self.log.error(
-                    "[ERROR] FFmpeg stdout is None, cannot proceed with in-memory capture."
+                    "MediaProcessor._ffmpeg_livestream_capture: FFmpeg stdout is None, cannot proceed with in-memory capture."
                 )
                 await process.wait()
                 return None
@@ -327,7 +401,7 @@ class MediaProcessor:
 
                     if max_file_size > 0 and total_size > max_file_size:
                         self.log.error(
-                            f"[ERROR] Stream size exceeded limit ({total_size} > {max_file_size} bytes). Terminating FFmpeg."
+                            f"MediaProcessor._ffmpeg_livestream_capture: Stream size exceeded limit ({total_size} > {max_file_size} bytes). Terminating FFmpeg."
                         )
                         process.kill()
                         await process.wait()
@@ -341,37 +415,43 @@ class MediaProcessor:
                 return_code = process.returncode
 
                 if return_code != 0:
-                    self.log.error(f"FFmpeg exited with code {return_code}.")
+                    self.log.error(
+                        f"MediaProcessor._ffmpeg_livestream_capture: FFmpeg exited with code {return_code}."
+                    )
                     if stderr:
                         self.log.error(
-                            f"[FFmpeg stderr]\n{stderr.decode(errors='ignore')}"
+                            f"MediaProcessor._ffmpeg_livestream_capture: [FFmpeg stderr]\n{stderr.decode(errors='ignore')}"
                         )
                     return None
 
                 if total_size == 0:
-                    self.log.error("[ERROR] FFmpeg returned empty data.")
+                    self.log.error(
+                        "MediaProcessor._ffmpeg_livestream_capture: FFmpeg returned empty data."
+                    )
                     return None
 
                 video_data.seek(0)
                 self.log.info(
-                    f"[INFO] Captured {total_size} bytes from the stream as a fragmented MP4 (in-memory)."
+                    f"MediaProcessor._ffmpeg_livestream_capture: Captured {total_size} bytes from the stream as a fragmented MP4 (in-memory)."
                 )
                 return video_data
 
             except asyncio.TimeoutError:
-                self.log.error("[ERROR] FFmpeg stream timed out.")
+                self.log.error(
+                    "MediaProcessor._ffmpeg_livestream_capture: FFmpeg stream timed out."
+                )
                 await process.wait()
                 return None
             except Exception as e:
                 self.log.exception(
-                    f"[ERROR] Unexpected error during FFmpeg capture: {e}"
+                    f"MediaProcessor._ffmpeg_livestream_capture: Unexpected error during FFmpeg capture: {e}"
                 )
                 await process.wait()
                 return None
             finally:
                 if process and process.returncode is None:
                     self.log.warning(
-                        "[WARNING] FFmpeg process still running. Forcing termination."
+                        "MediaProcessor._ffmpeg_livestream_capture: FFmpeg process still running. Forcing termination."
                     )
                     process.kill()
                     await process.wait()
@@ -385,7 +465,7 @@ class MediaProcessor:
             command_parts.append(shlex.quote(resolved_path))
 
             self.log.info(
-                f"[INFO] Running FFmpeg (file-output) with args:\n{' '.join(command_parts)}"
+                f"MediaProcessor._ffmpeg_livestream_capture: Running FFmpeg (file-output) with args:\n{' '.join(command_parts)}"
             )
 
             process = await asyncio.create_subprocess_shell(
@@ -397,30 +477,36 @@ class MediaProcessor:
             return_code = process.returncode
 
             if return_code != 0:
-                self.log.error(f"FFmpeg exited with code {return_code}.")
+                self.log.error(
+                    f"MediaProcessor._ffmpeg_livestream_capture: FFmpeg exited with code {return_code}."
+                )
                 if stderr:
-                    self.log.error(f"[FFmpeg stderr]\n{stderr.decode(errors='ignore')}")
+                    self.log.error(
+                        f"MediaProcessor._ffmpeg_livestream_capture: [FFmpeg stderr]\n{stderr.decode(errors='ignore')}"
+                    )
                 return None
 
             if not os.path.exists(resolved_path):
                 self.log.error(
-                    f"[ERROR] FFmpeg did not produce the file: {resolved_path}"
+                    f"MediaProcessor._ffmpeg_livestream_capture: FFmpeg did not produce the file: {resolved_path}"
                 )
                 return None
 
             file_size = os.path.getsize(resolved_path)
             if file_size == 0:
-                self.log.error(f"[ERROR] FFmpeg output file is empty: {resolved_path}")
+                self.log.error(
+                    f"MediaProcessor._ffmpeg_livestream_capture: FFmpeg output file is empty: {resolved_path}"
+                )
                 return None
 
             if max_file_size > 0 and file_size > max_file_size:
                 self.log.error(
-                    f"[ERROR] File size limit exceeded ({file_size} > {max_file_size} bytes)."
+                    f"MediaProcessor._ffmpeg_livestream_capture: File size limit exceeded ({file_size} > {max_file_size} bytes)."
                 )
                 return None
 
             self.log.info(
-                f"[INFO] Captured ~{file_size} bytes from the stream as a fragmented MP4 file:\n{resolved_path}"
+                f"MediaProcessor._ffmpeg_livestream_capture: Captured ~{file_size} bytes from the stream as a fragmented MP4 file:\n{resolved_path}"
             )
             return resolved_path
 
@@ -434,8 +520,8 @@ class MediaProcessor:
         max_file_size = self.config.file.get(max_file_size_key, 0)
 
         self.log.info(
-            f"[INFO] Starting stream from '{stream_url}' to {'memory' if in_memory else output_path}. "
-            f"Max size limit: {max_file_size} bytes"
+            f"MediaProcessor._download_image: Starting stream from '{stream_url}' to {'memory' if in_memory else output_path}. "
+            f"MediaProcessor._download_image: Max size limit: {max_file_size} bytes"
         )
 
         for attempt in range(1, max_retries + 1):
@@ -444,7 +530,7 @@ class MediaProcessor:
                     async with session.get(stream_url) as response:
                         if response.status != 200:
                             self.log.warning(
-                                f"Attempt {attempt}: Failed to fetch stream, status: {response.status}"
+                                f"MediaProcessor._download_image: Attempt {attempt}: Failed to fetch stream, status: {response.status}"
                             )
                             continue
 
@@ -464,14 +550,14 @@ class MediaProcessor:
                                         and total_bytes > max_file_size
                                     ):
                                         self.log.error(
-                                            f"[ERROR] Stream size exceeded limit ({total_bytes} > {max_file_size} bytes). Aborting."
+                                            f"MediaProcessor._download_image: Stream size exceeded limit ({total_bytes} > {max_file_size} bytes). Aborting."
                                         )
                                         return None
 
                                     output.write(chunk)
 
                                 self.log.info(
-                                    f"[INFO] Streamed {total_bytes} bytes into file: {resolved_path}"
+                                    f"MediaProcessor._download_image: Streamed {total_bytes} bytes into file: {resolved_path}"
                                 )
                                 return resolved_path
 
@@ -481,7 +567,7 @@ class MediaProcessor:
 
                             if max_file_size > 0 and total_bytes > max_file_size:
                                 self.log.error(
-                                    f"[ERROR] Stream size exceeded limit ({total_bytes} > {max_file_size} bytes). Aborting."
+                                    f"MediaProcessor._download_image: Stream size exceeded limit ({total_bytes} > {max_file_size} bytes). Aborting."
                                 )
                                 return None
 
@@ -489,20 +575,28 @@ class MediaProcessor:
 
                         output.seek(0)
                         self.log.info(
-                            f"[INFO] Streamed {total_bytes} bytes into memory."
+                            f"MediaProcessor._download_image: Streamed {total_bytes} bytes into memory."
                         )
                         return output
 
             except ClientError as e:
-                self.log.warning(f"Attempt {attempt}: Network error: {e}")
+                self.log.warning(
+                    f"MediaProcessor._download_image: Attempt {attempt}: Network error: {e}"
+                )
             except asyncio.TimeoutError:
-                self.log.warning(f"Attempt {attempt}: Timeout while streaming data.")
+                self.log.warning(
+                    f"MediaProcessor._download_image: Attempt {attempt}: Timeout while streaming data."
+                )
             except Exception as e:
-                self.log.warning(f"Attempt {attempt}: Error streaming data: {e}")
+                self.log.warning(
+                    f"MediaProcessor._download_image: Attempt {attempt}: Error streaming data: {e}"
+                )
 
             await asyncio.sleep(1)
 
-        self.log.error(f"[ERROR] Failed to stream data after {max_retries} attempts.")
+        self.log.error(
+            f"MediaProcessor._download_image: Failed to stream data after {max_retries} attempts."
+        )
         return None
 
     async def _get_stream_metadata(self, data: bytes) -> Optional[Dict[str, Any]]:
@@ -515,10 +609,14 @@ class MediaProcessor:
                 )
                 return None
 
-            self.log.info(f"[DEBUG] Data size: {len(data)} bytes")
+            self.log.info(
+                f"MediaProcessor._get_stream_metadata: Data size: {len(data)} bytes"
+            )
 
             metadata = await probe_bytes(data)
-            self.log.info(f"[DEBUG] Raw metadata from probe_bytes: {metadata}")
+            self.log.info(
+                f"MediaProcessor._get_stream_metadata: Raw metadata from probe_bytes: {metadata}"
+            )
 
             format_info = metadata.get("format", {})
             format_name = format_info.get("format_name", "").lower()
@@ -535,7 +633,9 @@ class MediaProcessor:
             )
 
             if any(img_keyword in format_name for img_keyword in image_formats):
-                self.log.debug(f"Detected image format: {format_name}")
+                self.log.debug(
+                    f"MediaProcessor._get_stream_metadata: Detected image format: {format_name}"
+                )
 
                 width = format_info.get("width")
                 height = format_info.get("height")
@@ -568,7 +668,7 @@ class MediaProcessor:
 
             if "streams" not in metadata or not metadata["streams"]:
                 self.log.warning(
-                    "[DEBUG] No streams found and not recognized as image."
+                    "MediaProcessor._get_stream_metadata: No streams found and not recognized as image."
                 )
                 return None
 
@@ -605,7 +705,7 @@ class MediaProcessor:
             active_stream = video_stream if has_video else audio_stream
             assert (
                 active_stream is not None
-            ), "Active stream must not be None at this point."
+            ), "MediaProcessor._get_stream_metadata: Active stream must not be None at this point."
             duration_str = active_stream.get("duration")
             if not duration_str or duration_str in ("N/A", ""):
                 duration = 0.0
@@ -614,11 +714,13 @@ class MediaProcessor:
                     duration = float(duration_str)
                 except ValueError:
                     self.log.info(
-                        f"Non-numeric duration '{duration_str}' detected. Defaulting to 0.0"
+                        f"MediaProcessor._get_stream_metadata: Non-numeric duration '{duration_str}' detected. Defaulting to 0.0"
                     )
                     duration = 0.0
 
-            self.log.info(f"[DEBUG] Stream duration: {duration}")
+            self.log.info(
+                f"MediaProcessor._get_stream_metadata: Stream duration: {duration}"
+            )
 
             if duration > self.config.file.get("max_duration", 0):
                 self.log.warning(
@@ -673,11 +775,11 @@ class MediaProcessor:
 
         return filename
 
-    async def _handle_image(self, url):
+    async def _handle_image(self, url: str) -> Optional[MediaFile]:
         image_data = await self._download_image(url)
         if not image_data:
             self.log.warning(
-                f"MediaHandler.process_url._handle_image: Failed to fetch image from {url}"
+                f"MediaHandler._handle_image: Failed to fetch image from {url}"
             )
             return None
 
@@ -687,30 +789,33 @@ class MediaProcessor:
             )
         else:
             self.log.warning(
-                "MediaHandler.process_url._handle_image: Downloading outside of stdout is not yet supported."
+                "MediaHandler._handle_image: Downloading outside of stdout is not yet supported."
             )
             return None
 
         filename = self._generate_filename(url)
         extension = filename.rsplit(".", 1)[-1] if "." in filename else "jpg"
 
+        parsed_url = urlparse(url)
+        domain = parsed_url.netloc.split(":")[0]
+
         media_object = MediaFile(
             filename=filename,
             stream=image_data,
             metadata=MediaInfo(
                 url=url,
-                id=None,
-                title=None,
-                uploader=None,
+                id=str(uuid.uuid5(uuid.NAMESPACE_URL, url)),
+                title=url,
+                uploader="Unknown Uploader",
                 ext=extension,
-                extractor=None,
+                extractor=domain,
                 duration=image_metadata.get("duration", 0),
                 width=image_metadata.get("width", 0),
                 height=image_metadata.get("height", 0),
                 size=image_metadata.get("size", 0),
                 has_video=image_metadata.get("has_video", False),
                 has_audio=image_metadata.get("has_audio", False),
-                is_image=image_metadata.get("is_image", False),
+                is_image=image_metadata.get("is_image", True),
             ),
         )
 
@@ -720,7 +825,7 @@ class MediaProcessor:
         commands = self._create_ytdlp_commands(url)
         if not commands:
             self.log.warning(
-                "MediaHandler.process_url._handle_non_image: No valid yt-dlp commands found in configuration."
+                "MediaHandler._handle_non_image: No valid yt-dlp commands found in configuration."
             )
             return None
 
@@ -729,7 +834,7 @@ class MediaProcessor:
         ytdlp_metadata = await self._ytdlp_execute_query(commands=query_commands)
         if not ytdlp_metadata:
             self.log.warning(
-                "MediaHandler.process_url._handle_non_image: Failed to retrieve metadata from yt-dlp."
+                "MediaHandler._handle_non_image: Failed to retrieve metadata from yt-dlp."
             )
             return None
 
@@ -738,7 +843,7 @@ class MediaProcessor:
 
         if is_live and not self.config.ffmpeg.get("enable_livestream_previews", False):
             self.log.warning(
-                "MediaHandler.process_url._handle_non_image: Live media detected, but livestream previews are disabled."
+                "MediaHandler._handle_non_image: Live media detected, but livestream previews are disabled."
             )
             return None
 
@@ -748,7 +853,7 @@ class MediaProcessor:
             )
             if not media_stream_data:
                 self.log.warning(
-                    "MediaHandler.process_url._handle_non_image: Failed to download live stream."
+                    "MediaHandler._handle_non_image: Failed to download live stream."
                 )
                 return None
 
@@ -757,12 +862,12 @@ class MediaProcessor:
             if duration is not None:
                 if duration > self.config.file.get("max_duration", 0):
                     self.log.warning(
-                        "MediaHandler.process_url._handle_non_image: Media length exceeds the configured duration limit."
+                        "MediaHandler._handle_non_image: Media length exceeds the configured duration limit."
                     )
                     return None
             else:
                 self.log.warning(
-                    "MediaHandler.process_url._handle_non_image: Media duration is missing from metadata. "
+                    "MediaHandler._handle_non_image: Media duration is missing from metadata. "
                     "Attempting to download the stream anyway."
                 )
 
@@ -772,7 +877,7 @@ class MediaProcessor:
 
         if not media_stream_data:
             self.log.warning(
-                "MediaHandler.process_url._handle_non_image: Failed to download media stream."
+                "MediaHandler._handle_non_image: Failed to download media stream."
             )
             return None
 
@@ -782,7 +887,7 @@ class MediaProcessor:
             )
         else:
             self.log.warning(
-                "MediaHandler.process_url._handle_non_image: Downloading outside of stdout is not yet supported."
+                "MediaHandler._handle_non_image: Downloading outside of stdout is not yet supported."
             )
             return None
 
@@ -819,7 +924,20 @@ class MediaProcessor:
         thumbnail_file_object = None
 
         try:
-            primary_file_object = await self._handle_non_image(url)
+            if self._is_image(url):
+                self.log.info(
+                    "MediaProcessor.process_url: Detected image URL. Processing as image."
+                )
+                primary_file_object = await self._handle_image(url)
+            else:
+                self.log.info(
+                    "MediaProcessor.process_url: Detected non-image URL. Processing as non-image."
+                )
+                primary_file_object = await self._handle_non_image(url)
+
+            if primary_file_object:
+                primary_file_object.metadata.extractor = domain
+
             if primary_file_object and primary_file_object.metadata.thumbnail_url:
                 thumbnail_file_object = await self._handle_image(
                     primary_file_object.metadata.thumbnail_url
@@ -839,53 +957,45 @@ class MediaProcessor:
                     thumbnail_file_object.metadata.id = primary_file_object.metadata.id
                 else:
                     self.log.warning(
-                        "MediaHandler.process_url: Failed to fetch thumbnail metadata."
+                        "MediaProcessor.process_url: Failed to fetch thumbnail metadata."
                     )
+
         except Exception as e:
-            self.log.warning("Failed to download media, trying as image.")
-
-            is_image = self._is_image(url)
-            if is_image:
-                primary_file_object = await self._handle_image(url)
-                if primary_file_object:
-                    primary_file_object.metadata.title = url
-                    primary_file_object.metadata.uploader = "Unknown Uploader"
-                    primary_file_object.metadata.extractor = domain
-                    primary_file_object.metadata.id = str(
-                        uuid.uuid5(uuid.NAMESPACE_URL, url)
-                    )
-
-        if not primary_file_object:
-            self.log.warning("MediaHandler.process_url: Failed to download file.")
+            self.log.warning(
+                f"MediaProcessor.process_url: Failed to process URL: {url}. Error: {e}"
+            )
             return None
 
-        media_type = (
-            "Video"
-            if primary_file_object.metadata.has_video
-            else (
-                "Audio"
-                if primary_file_object.metadata.has_audio
-                else "Image" if primary_file_object.metadata.is_image else "Unknown"
-            )
-        )
+        if not primary_file_object:
+            self.log.warning("MediaProcessor.process_url: Failed to download file.")
+            return None
+
+        if primary_file_object.metadata.has_video:
+            media_type = "Video"
+        elif primary_file_object.metadata.has_audio:
+            media_type = "Audio"
+        elif primary_file_object.metadata.is_image:
+            media_type = "Image"
+        else:
+            media_type = "Unknown"
 
         self.log.info(
-            f"Media Found:\n-Filename: {primary_file_object.filename}\n"
-            f"- Size: {primary_file_object.metadata.size} bytes"
-            f"- Media type: {media_type}"
+            f"Media Found:\n- Filename: {primary_file_object.filename}\n"
+            f"- Size: {primary_file_object.metadata.size} bytes\n"
+            f"- Media type: {media_type}\n"
+            f"- Website: {domain}"
         )
 
-        media_object = Media(
-            content=primary_file_object, thumbnail=thumbnail_file_object
-        )
-
-        return media_object
+        return Media(content=primary_file_object, thumbnail=thumbnail_file_object)
 
 
 class SynapseProcessor:
-    def __init__(self, log: "TraceLogger", client: "MaubotMatrixClient"):
+    def __init__(
+        self, log: "TraceLogger", client: "MaubotMatrixClient", config: "Config"
+    ):
         self.log = log
         self.client = client
+        self.config = config
 
     async def _is_reacted(
         self, room_id: "RoomID", event_id: "EventID", reaction: str
@@ -914,7 +1024,9 @@ class SynapseProcessor:
             return (True, reaction_event.event_id) if reaction_event else (False, None)
 
         except Exception as e:
-            self.log.error(f"Failed to fetch reaction event: {e}")
+            self.log.error(
+                f"SynapseProcessor._is_reacted: Failed to fetch reaction event: {e}"
+            )
             return False, None
 
     async def reaction_handler(self, event: "MaubotMessageEvent") -> None:
@@ -937,59 +1049,38 @@ class SynapseProcessor:
         while chunk := stream.read(chunk_size):
             yield chunk
 
-    async def upload_to_content_repository(
-        self, data: BytesIO, filename: str, size: int
-    ):
-        async_upload = size > 10 * 1024 * 1024  # Files larger than 10MB
-
-        upload_data = (
-            self._bytes_io_to_async_iter(data) if async_upload else data.read()
-        )
-
-        if async_upload:
-            task = asyncio.create_task(
-                self.client.upload_media(
-                    data=upload_data,
-                    filename=filename,
-                    size=size,
-                    async_upload=True,
-                )
-            )
-            self.log.info(f"Async upload initiated for {filename} (size: {size} bytes)")
-            return task
-
-        else:
-            response = await self.client.upload_media(
+    async def _handle_async_upload(self, data: BytesIO, filename: str, size: int):
+        upload_data = self._bytes_io_to_async_iter(data)
+        task = asyncio.create_task(
+            self.client.upload_media(
                 data=upload_data,
                 filename=filename,
                 size=size,
-                async_upload=False,
+                async_upload=True,
             )
-            return response
+        )
+        self.log.info(
+            f"SynapseProcessor._handle_async_upload: Async upload initiated for {filename} (size: {size} bytes)"
+        )
+        return task
 
-    # async def upload_to_content_repository(
-    #     self, data: BytesIO, filename: str, size: int
-    # ) -> str | None:
-    #     async_upload = size > 10 * 1024 * 1024  # Files larger than 10MB
+    async def _handle_sync_upload(self, data: BytesIO, filename: str, size: int):
+        upload_data = data.read()
+        response = await self.client.upload_media(
+            data=upload_data,
+            filename=filename,
+            size=size,
+            async_upload=False,
+        )
+        return response
 
-    #     upload_data = (
-    #         self._bytes_io_to_async_iter(data) if async_upload else data.read()
-    #     )
+    async def upload_to_content_repository(
+        self, data: BytesIO, filename: str, size: int
+    ):
+        async_upload_enabled = self.config.file.get("async_upload", False)
+        async_upload_required = size > 10 * 1024 * 1024
 
-    #     response = await self.client.upload_media(
-    #         data=upload_data,
-    #         filename=filename,
-    #         size=size,
-    #         async_upload=async_upload,
-    #     )
+        if async_upload_enabled and async_upload_required:
+            return await self._handle_async_upload(data, filename, size)
 
-    #     if not response:
-    #         self.log.error(
-    #             "SynapseProcessor.upload_to_content_repository: URI not obtained."
-    #         )
-    #         return None
-
-    #     if async_upload:
-    #         self.log.info(f"Async upload initiated for {filename} (size: {size} bytes)")
-
-    #         return response
+        return await self._handle_sync_upload(data, filename, size)
