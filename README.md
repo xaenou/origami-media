@@ -3,8 +3,6 @@
 The purpose of this maubot plugin is to process and display media for matrix servers when a url is detected or the appropriate command is supplied with a valid url.
 Currently almost all video and image formats are supported. Standalone audio stream support coming soon.
 
-NOTICE: This is plugin is still highly experimental and not yet stable.
-
 ## Features
 
 Almost everything is configurable and can be adjusted within the maubot manager dashboard of it's assigned instance.
