@@ -35,14 +35,11 @@ class DisplayHandler:
 
         thumbnail_info = None
         thumbnail_uri = None
-        if (
-            processed_media.thumbnail_info
-            and processed_media.thumbnail_info.thumbnail_url
-        ):
+        if processed_media.thumbnail_info and processed_media.thumbnail_uri:
             t_meta = processed_media.thumbnail_info
             t_ext = t_meta.ext or "jpg"
             t_size = t_meta.size or 0
-            thumbnail_uri = t_meta.thumbnail_url
+            thumbnail_uri = processed_media.thumbnail_uri
             self.log.info("Content being rendered with thumbnail")
             thumbnail_info = ThumbnailInfo(
                 height=int(t_meta.height or 0),

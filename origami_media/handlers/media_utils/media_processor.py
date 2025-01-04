@@ -160,8 +160,12 @@ class MediaProcessor:
             "audio": "mp3",
             "application": "bin",
             "vp9": "webm",
+            "h264": "mp4",
         }
-        return format_map.get(format, format)
+        new_format = format_map.get(format, format)
+        if new_format != format:
+            self.log.info(f"Format mapped from {format} to {new_format}")
+        return new_format
 
     def _generate_media_filename(self, metadata: dict, extension: str) -> str:
         filename = self._generate_filename(metadata)
@@ -223,6 +227,7 @@ class MediaProcessor:
             "url": ytdlp_metadata["url"],
             "ext": ytdlp_metadata.get("ext", "mp4"),
             "origin": "advanced",
+            "thumbnail": ytdlp_metadata.get("thumbnail"),
         }
 
         return self._create_media_object(
