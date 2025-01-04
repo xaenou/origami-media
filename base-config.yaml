@@ -19,10 +19,10 @@ ytdlp:
   active_preset: "Default Preset"
   presets:
     - name: "Default Preset"
-      format: "bestvideo[height<=720]+bestaudio/best[height<=720]"
+      format: "worst"
       fallback_formats:
+        - "bestvideo[height<=720]+bestaudio/best[height<=720]"
         - "bestvideo[height<=1080]+bestaudio/best[height<=1080]"
-        - "worst"
 
 ffmpeg:
   enable_livestream_previews: True

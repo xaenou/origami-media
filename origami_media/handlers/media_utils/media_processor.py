@@ -251,13 +251,25 @@ class MediaProcessor:
         return self._create_media_object(data, metadata, ffmpeg_metadata)
 
     async def _primary_media_controller(self, url: str) -> Optional[MediaFile]:
-        data = await self._download_simple_media(url)
-        if data:
-            metadata = await self._analyze_file_metadata(data)
-            if metadata:
-                return await self._process_simple_media(
-                    data, ffmpeg_metadata=metadata, url=url
-                )
+        skip_simple = {
+            "odysee",
+            "youtube",
+            "bitchute",
+            "rumble",
+            "twitter",
+            "x",
+            "youtu",
+        }
+        should_skip = any(service in url.lower() for service in skip_simple)
+
+        if not should_skip:
+            data = await self._download_simple_media(url)
+            if data:
+                metadata = await self._analyze_file_metadata(data)
+                if metadata:
+                    return await self._process_simple_media(
+                        data, ffmpeg_metadata=metadata, url=url
+                    )
 
         ytdlp_metadata = await self._query_advanced_media(url)
         if ytdlp_metadata:
