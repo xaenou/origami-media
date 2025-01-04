@@ -37,6 +37,8 @@ ffmpeg:
     - "90"
     - "-f"
     - "mp4"
+  enable_thumbnail_generation: true
+  thumbnail_args: false # not yet implemented
 
 file:
   output_path: "-" # stream to memory
@@ -55,3 +57,8 @@ log: # wip
   exception: true
   warning: true
   info: true
+
+command:
+  query_image:
+    tenor_api_key:
+    unsplash_api_key:

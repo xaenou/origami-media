@@ -1,12 +1,14 @@
 from dataclasses import dataclass
 from io import BytesIO
-from typing import Optional
+from typing import Literal, Optional
 
 
 @dataclass
 class MediaInfo:
     url: str
-    id: Optional[str] = None
+    media_type: Literal["audio", "video", "image", "unknown"]
+    origin: Literal["simple", "advanced", "thumbnail"]
+    id: str
     thumbnail_url: Optional[str] = None
     title: Optional[str] = None
     uploader: Optional[str] = None
@@ -16,9 +18,6 @@ class MediaInfo:
     width: Optional[int] = None
     height: Optional[int] = None
     size: Optional[int] = None
-    has_video: bool = False
-    has_audio: bool = False
-    is_image: bool = False
 
 
 @dataclass

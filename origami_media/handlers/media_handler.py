@@ -4,15 +4,18 @@ import asyncio
 from io import BytesIO
 from typing import TYPE_CHECKING, List, Optional, Tuple, TypeAlias
 
-from .media_models import ProcessedMedia
-from .media_utils import MediaProcessor, SynapseProcessor
+from .media_utils.media_processor import MediaProcessor
+from .media_utils.models import ProcessedMedia
+from .media_utils.synapse_processor import SynapseProcessor
 
 if TYPE_CHECKING:
-    from main import Config
+    from aiohttp import ClientSession
     from maubot.matrix import MaubotMatrixClient, MaubotMessageEvent
     from mautrix.util.logging.trace import TraceLogger
 
-    from .media_utils import Media
+    from origami_media.origami_media import Config
+
+    from .media_utils.models import Media
 
 
 processed_media_event: TypeAlias = Tuple[
@@ -22,12 +25,19 @@ processed_media_event: TypeAlias = Tuple[
 
 class MediaHandler:
     def __init__(
-        self, log: "TraceLogger", client: "MaubotMatrixClient", config: "Config"
+        self,
+        log: "TraceLogger",
+        client: "MaubotMatrixClient",
+        config: "Config",
+        http: "ClientSession",
     ):
         self.log = log
         self.client = client
         self.config = config
-        self.media_processor = MediaProcessor(log=self.log, config=self.config)
+        self.http = http
+        self.media_processor = MediaProcessor(
+            log=self.log, config=self.config, http=self.http
+        )
         self.synapse_processor = SynapseProcessor(
             log=self.log, client=self.client, config=self.config
         )
@@ -38,17 +48,25 @@ class MediaHandler:
 
         content_upload_result = None
         thumbnail_upload_result = None
+
         try:
             for media_part, result_variable in [
                 (media_object.content, "content_upload_result"),
                 (media_object.thumbnail, "thumbnail_upload_result"),
             ]:
                 if not media_part:
+                    self.log.warning(
+                        f"Skipping {result_variable} as media_part is None or empty."
+                    )
                     continue
 
                 stream = media_part.stream
                 filename = media_part.filename
                 size = media_part.metadata.size or 0
+
+                self.log.info(
+                    f"Uploading {result_variable}: filename={filename}, size={size}"
+                )
 
                 if isinstance(stream, BytesIO):
                     stream.seek(0)
@@ -66,8 +84,10 @@ class MediaHandler:
                     upload_result = upload_result.result()
 
                 if not upload_result:
-                    self.log.warning(
-                        f"MediaHandler._upload_media: Failed to upload file: {filename}"
+                    self.log.warning(f"Failed to upload file: {filename}")
+                else:
+                    self.log.info(
+                        f"{result_variable} uploaded successfully: URI={upload_result}"
                     )
 
                 if result_variable == "content_upload_result":
@@ -75,12 +95,16 @@ class MediaHandler:
                 else:
                     thumbnail_upload_result = upload_result
 
+            self.log.info(
+                f"Upload Results: content={content_upload_result}, thumbnail={thumbnail_upload_result}"
+            )
             return content_upload_result, thumbnail_upload_result
 
         finally:
             for media_part in [media_object.content, media_object.thumbnail]:
                 if media_part and isinstance(media_part.stream, BytesIO):
                     media_part.stream.close()
+                    self.log.warning(f"Closed stream for file: {media_part.filename}")
 
     async def process(
         self, urls: list[str], event: "MaubotMessageEvent"

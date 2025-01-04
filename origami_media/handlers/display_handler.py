@@ -12,11 +12,12 @@ from mautrix.types.event import message
 from mautrix.types.event.type import EventType
 
 if TYPE_CHECKING:
-    from main import Config
     from maubot.matrix import MaubotMatrixClient, MaubotMessageEvent
     from mautrix.util.logging.trace import TraceLogger
 
-    from .media_models import ProcessedMedia
+    from origami_media.origami_media import Config
+
+    from .media_utils.models import ProcessedMedia
 
 
 class DisplayHandler:
@@ -42,7 +43,7 @@ class DisplayHandler:
             t_ext = t_meta.ext or "jpg"
             t_size = t_meta.size or 0
             thumbnail_uri = t_meta.thumbnail_url
-
+            self.log.info("Content being rendered with thumbnail")
             thumbnail_info = ThumbnailInfo(
                 height=int(t_meta.height or 0),
                 width=int(t_meta.width or 0),
@@ -50,7 +51,8 @@ class DisplayHandler:
                 size=int(t_size),
             )
 
-        if content_info.has_video:
+        if content_info.media_type == "video":
+            self.log.info("Content being rendered as video")
             msgtype = message.MessageType.VIDEO
             media_info = VideoInfo(
                 mimetype=f"video/{content_info.ext}",
@@ -62,14 +64,16 @@ class DisplayHandler:
                 thumbnail_url=ContentURI(thumbnail_uri) if thumbnail_uri else None,
             )
 
-        elif content_info.has_audio:
+        elif content_info.media_type == "audio":
+            self.log.info("Content being rendered as audio")
             msgtype = message.MessageType.AUDIO
             media_info = AudioInfo(
                 mimetype=f"audio/{content_info.ext}",
                 duration=int(content_info.duration or 0),
                 size=int(content_info.size or 0),
             )
-        elif content_info.is_image:
+        elif content_info.media_type == "image":
+            self.log.info("Content being rendered as image")
             msgtype = message.MessageType.IMAGE
             media_info = ImageInfo(
                 mimetype=f"image/{content_info.ext}",
@@ -78,6 +82,7 @@ class DisplayHandler:
                 size=int(content_info.size or 0),
             )
         else:
+            self.log.info("Content being rendered as file")
             msgtype = message.MessageType.FILE
             media_info = FileInfo(
                 mimetype="application/octet-stream",

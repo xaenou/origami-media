@@ -3,9 +3,10 @@ from typing import TYPE_CHECKING, List, Optional, Tuple, TypeAlias
 from urllib.parse import urlparse
 
 if TYPE_CHECKING:
-    from main import Config
     from maubot.matrix import MaubotMessageEvent
     from mautrix.util.logging.trace import TraceLogger
+
+    from origami_media.origami_media import Config
 
 
 processed_url_event: TypeAlias = Tuple[Optional[List[str]], "MaubotMessageEvent"]
@@ -122,7 +123,6 @@ class UrlHandler:
         if not urls:
             self.log.warning("UrlHandler.process_string: no urls found in the message.")
 
-        sanitized_message = message
         url_mapping = {}
 
         for url in urls:

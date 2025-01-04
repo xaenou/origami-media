@@ -7,10 +7,11 @@ from maubot.plugin_base import Plugin
 from mautrix.types import EventType
 from mautrix.util.config import BaseProxyConfig, ConfigUpdateHelper
 
-from .dependency_handler import DependencyHandler
-from .display_handler import DisplayHandler
-from .media_handler import MediaHandler
-from .url_handler import UrlHandler
+from .handlers.command_handler import CommandHandler
+from .handlers.dependency_handler import DependencyHandler
+from .handlers.display_handler import DisplayHandler
+from .handlers.media_handler import MediaHandler
+from .handlers.url_handler import UrlHandler
 
 
 class Config(BaseProxyConfig):
@@ -21,6 +22,7 @@ class Config(BaseProxyConfig):
         helper.copy("ffmpeg")
         helper.copy("file")
         helper.copy("queue")
+        helper.copy("command")
 
     @property
     def meta(self) -> Dict[str, Any]:
@@ -46,6 +48,10 @@ class Config(BaseProxyConfig):
     def queue(self) -> Dict[str, Any]:
         return cast(Dict[str, Any], self.get("queue", {}))
 
+    @property
+    def command(self) -> Dict[str, Any]:
+        return cast(Dict[str, Any], self.get("command", {}))
+
 
 class OrigamiMedia(Plugin):
     config: Config
@@ -62,14 +68,14 @@ class OrigamiMedia(Plugin):
         self.dependency_handler = DependencyHandler(log=self.log)
         self.url_handler = UrlHandler(log=self.log, config=self.config)
         self.media_handler = MediaHandler(
-            log=self.log,
-            config=self.config,
-            client=self.client,
+            log=self.log, config=self.config, client=self.client, http=self.http
         )
         self.display_handler = DisplayHandler(
             log=self.log, config=self.config, client=self.client
         )
-
+        self.command_handler = CommandHandler(
+            config=self.config, log=self.log, http=self.http
+        )
         self.event_queue = asyncio.Queue(maxsize=self.config.queue.get("max_size", 100))
         self.url_event_queue = asyncio.Queue()
         self.media_event_queue = asyncio.Queue()
@@ -199,13 +205,15 @@ class OrigamiMedia(Plugin):
         self.log.info("All workers stopped cleanly.")
         await super().stop()
 
-    @command.new(name="om", require_subcommand=False)
+    @command.new(
+        name="om",
+        require_subcommand=False,
+        help="Pass in a url and it will return the media.",
+    )
     @command.argument("url", pass_raw=True, required=False)
     async def om(self, event: MaubotMessageEvent, url: str) -> None:
         if not self.config.meta.get("enable_commands", False):
             return
-        self.log.info(event)
-        self.log.info(url)
 
         if not url:
             return
@@ -220,10 +228,53 @@ class OrigamiMedia(Plugin):
 
         await self.display_handler.render(media=processed_media, event=event)
 
-    @om.subcommand(name="debug")
-    @command.argument(name="url", pass_raw=True)
+    @command.new(
+        name="tenor",
+        aliases=["gif", "g"],
+        require_subcommand=False,
+        help="Pass in a query and it will return a random gif. Aliases: 'gif', 'g'.",
+    )
+    @command.argument("query", pass_raw=True, required=False)
+    async def tenor(self, event: MaubotMessageEvent, query: str) -> None:
+        if not self.config.meta.get("enable_commands", False):
+            return
+
+        provider = "tenor"
+
+        await self.command_handler.query_image_controller(
+            event=event,
+            query=query,
+            provider=provider,
+            media_handler=self.media_handler,
+            display_handler=self.display_handler,
+        )
+
+    @command.new(
+        name="unsplash",
+        aliases=["img", "us"],
+        require_subcommand=False,
+        help="Pass in a query and it will return a random image.",
+    )
+    @command.argument("query", pass_raw=True, required=False)
+    async def unsplash(self, event: MaubotMessageEvent, query: str) -> None:
+        if not self.config.meta.get("enable_commands", False):
+            return
+
+        provider = "unsplash"
+
+        await self.command_handler.query_image_controller(
+            event=event,
+            query=query,
+            provider=provider,
+            media_handler=self.media_handler,
+            display_handler=self.display_handler,
+        )
+
+    @command.new(name="debug")
+    @command.argument(name="url", pass_raw=True, required=False)
     async def debug(self, event: MaubotMessageEvent, url: str) -> None:
         if self.config.meta.get("debug", False) and self.config.meta.get(
             "enable_commands", False
         ):
-            return
+            if not url:
+                return
