@@ -93,6 +93,14 @@ class MediaProcessor:
             data = await self.ffmpeg_controller.capture_livestream(
                 stream_url=ytdlp_metadata["url"]
             )
+
+            if not data or not isinstance(data, BytesIO):
+                self._handle_download_error(
+                    "Failed to download media stream or unsupported data type."
+                )
+                return None
+
+            return data
         else:
             if (duration := ytdlp_metadata.get("duration")) is not None:
                 if duration > self.config.file.get("max_duration", 0):
@@ -100,17 +108,18 @@ class MediaProcessor:
                         "Media length exceeds the configured duration limit."
                     )
                     return None
+
             data = await self.ytdlp_controller.ytdlp_execute_download(
                 commands=download_commands
             )
 
-        if not data or not isinstance(data, BytesIO):
-            self._handle_download_error(
-                "Failed to download media stream or unsupported data type."
-            )
-            return None
+            if not data or not isinstance(data, BytesIO):
+                self._handle_download_error(
+                    "Failed to download media stream or unsupported data type."
+                )
+                return None
 
-        return data
+            return data
 
     def _get_media_type(
         self, metadata: FfmpegMetadata
@@ -263,12 +272,12 @@ class MediaProcessor:
         should_skip = any(service in url.lower() for service in skip_simple)
 
         if not should_skip:
-            data = await self._download_simple_media(url)
-            if data:
-                metadata = await self._analyze_file_metadata(data)
-                if metadata:
+            simple_data = await self._download_simple_media(url)
+            if simple_data:
+                simple_metadata = await self._analyze_file_metadata(simple_data)
+                if simple_metadata:
                     return await self._process_simple_media(
-                        data, ffmpeg_metadata=metadata, url=url
+                        simple_data, ffmpeg_metadata=simple_metadata, url=url
                     )
 
         ytdlp_metadata = await self._query_advanced_media(url)
