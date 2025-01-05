@@ -40,86 +40,57 @@ class MediaProcessor:
             return None
 
     async def _download_simple_media(self, url: str) -> Optional[BytesIO]:
-        data = await self.native_controller.client_download(url)
-        if not data:
-            self._handle_download_error(f"Failed to fetch image from {url}")
+        try:
+            return await self.native_controller.client_download(url)
+        except Exception as e:
+            error_message = f"Failed to download media: {e}"
+            self._handle_download_error(error_message)
             return None
-
-        if not isinstance(data, BytesIO):
-            self._handle_download_error(
-                "Downloading outside of stdout is not yet supported."
-            )
-            return None
-
-        return data
 
     async def _query_advanced_media(self, url) -> Optional[Dict]:
-        query_commands = self.ytdlp_controller.create_ytdlp_commands(
-            url, command_type="query"
-        )
-
-        if not query_commands:
-            self._handle_download_error(
-                "No valid yt-dlp commands found in configuration."
-            )
-            return None
-
-        ytdlp_metadata = await self.ytdlp_controller.ytdlp_execute_query(
-            commands=query_commands
-        )
-        if not ytdlp_metadata:
-            return None
-
-        return ytdlp_metadata
-
-    async def _download_advanced_media(
-        self, url: str, ytdlp_metadata: dict
-    ) -> Optional[BytesIO]:
-        download_commands = self.ytdlp_controller.create_ytdlp_commands(
-            url, command_type="download"
-        )
-
-        if not ytdlp_metadata:
-            self._handle_download_error("Failed to retrieve metadata from yt-dlp.")
-            return None
-
-        if ytdlp_metadata.get("is_live", False):
-            if not self.config.ffmpeg.get("enable_livestream_previews", False):
-                self._handle_download_error(
-                    "Live media detected, but livestream previews are disabled."
-                )
-                return None
-
-            data = await self.ffmpeg_controller.capture_livestream(
-                stream_url=ytdlp_metadata["url"]
+        try:
+            query_commands = self.ytdlp_controller.create_ytdlp_commands(
+                url, command_type="query"
             )
 
-            if not data or not isinstance(data, BytesIO):
-                self._handle_download_error(
-                    "Failed to download media stream or unsupported data type."
-                )
-                return None
+            ytdlp_metadata = await self.ytdlp_controller.ytdlp_execute_query(
+                commands=query_commands
+            )
+            return ytdlp_metadata
 
-            return data
-        else:
+        except Exception as e:
+            error_message = f"Failed to query media: {e}"
+            self._handle_download_error(error_message)
+            return None
+
+    async def _download_advanced_media(self, ytdlp_metadata: dict) -> Optional[BytesIO]:
+        try:
+            if ytdlp_metadata.get("is_live", False):
+                if not self.config.ffmpeg.get("enable_livestream_previews", False):
+                    raise RuntimeError(
+                        "Live media detected, but livestream previews are disabled."
+                    )
+
+                return await self.ffmpeg_controller.capture_livestream(
+                    stream_url=ytdlp_metadata["url"]
+                )
+
             if (duration := ytdlp_metadata.get("duration")) is not None:
                 if duration > self.config.file.get("max_duration", 0):
-                    self._handle_download_error(
+                    raise RuntimeError(
                         "Media length exceeds the configured duration limit."
                     )
-                    return None
 
-            data = await self.ytdlp_controller.ytdlp_execute_download(
-                commands=download_commands
+            return await self.ytdlp_controller.ytdlp_execute_download(
+                commands=self.ytdlp_controller.create_ytdlp_commands(
+                    ytdlp_metadata["url"], command_type="download"
+                )
             )
 
-            if not data or not isinstance(data, BytesIO):
-                self._handle_download_error(
-                    "Failed to download media stream or unsupported data type."
-                )
-                return None
-
-            return data
+        except Exception as e:
+            error_message = f"Failed to download media: {e}"
+            self._handle_download_error(error_message)
+            return None
 
     def _get_media_type(
         self, metadata: FfmpegMetadata
@@ -170,6 +141,8 @@ class MediaProcessor:
             "application": "bin",
             "vp9": "webm",
             "h264": "mp4",
+            "png_pipe": "png",
+            "unknown_video": "png",
         }
         new_format = format_map.get(format, format)
         if new_format != format:
@@ -228,7 +201,7 @@ class MediaProcessor:
     async def _process_advanced_media(
         self, data: BytesIO, ytdlp_metadata: Dict, ffmpeg_metadata: FfmpegMetadata
     ) -> Optional[MediaFile]:
-        mutate_ytdlp_metadata = {
+        mutated_ytdlp_metadata = {
             "id": ytdlp_metadata.get("id"),
             "extractor": ytdlp_metadata.get("extractor"),
             "uploader": ytdlp_metadata.get("uploader", "unknown_uploader"),
@@ -240,7 +213,7 @@ class MediaProcessor:
         }
 
         return self._create_media_object(
-            data, other_metadata=mutate_ytdlp_metadata, file_metadata=ffmpeg_metadata
+            data, other_metadata=mutated_ytdlp_metadata, file_metadata=ffmpeg_metadata
         )
 
     async def _process_thumbnail_media(
@@ -266,12 +239,16 @@ class MediaProcessor:
             "bitchute",
             "rumble",
             "twitter",
-            "x",
+            "x.com",
             "youtu",
         }
         should_skip = any(service in url.lower() for service in skip_simple)
+        self.log.info(
+            f"entering primary media controller, should skip simple download: {should_skip}"
+        )
 
         if not should_skip:
+            # try a simple flow without yt-dlp
             simple_data = await self._download_simple_media(url)
             if simple_data:
                 simple_metadata = await self._analyze_file_metadata(simple_data)
@@ -280,16 +257,19 @@ class MediaProcessor:
                         simple_data, ffmpeg_metadata=simple_metadata, url=url
                     )
 
+        # try an advanced flow with yt-dlp
         ytdlp_metadata = await self._query_advanced_media(url)
         if ytdlp_metadata:
-            data = await self._download_advanced_media(
-                url, ytdlp_metadata=ytdlp_metadata
+            advanced_data = await self._download_advanced_media(
+                ytdlp_metadata=ytdlp_metadata
             )
-            if data:
-                metadata = await self._analyze_file_metadata(data)
-                if metadata:
+            if advanced_data:
+                advanced_metadata = await self._analyze_file_metadata(advanced_data)
+                if advanced_metadata:
                     return await self._process_advanced_media(
-                        data, ffmpeg_metadata=metadata, ytdlp_metadata=ytdlp_metadata
+                        advanced_data,
+                        ffmpeg_metadata=advanced_metadata,
+                        ytdlp_metadata=ytdlp_metadata,
                     )
 
         return None
@@ -313,13 +293,16 @@ class MediaProcessor:
                         url=primary_media_object.metadata.url,
                     )
 
-        if primary_media_object.metadata.media_type == "video":
+        elif (
+            primary_media_object.metadata.media_type == "video"
+            and self.config.ffmpeg["enable_thumbnail_generation"]
+        ):
+            primary_media_object.stream.seek(0)
             data = await self.ffmpeg_controller.extract_thumbnail(
-                video_data=primary_media_object.stream.getvalue()
+                video_data=primary_media_object.stream.getvalue(),
+                format=primary_media_object.metadata.ext or "mp4",
             )
             if data:
-                if not isinstance(data, BytesIO):
-                    return None
                 metadata = await self._analyze_file_metadata(data)
                 if metadata:
                     return await self._process_thumbnail_media(
@@ -341,7 +324,7 @@ class MediaProcessor:
             primary_file_object
         )
         if not thumbnail_file_object:
-            self.log.info("Thumbnail was not obtained.")
+            self.log.warning("Thumbnail was not obtained.")
 
         self.log.info(
             f"Media Found:\n- Filename: {primary_file_object.filename}\n"

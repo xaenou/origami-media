@@ -74,21 +74,6 @@ class SynapseProcessor:
         while chunk := stream.read(chunk_size):
             yield chunk
 
-    async def _handle_async_upload(self, data: BytesIO, filename: str, size: int):
-        upload_data = self._bytes_io_to_async_iter(data)
-        task = asyncio.create_task(
-            self.client.upload_media(
-                data=upload_data,
-                filename=filename,
-                size=size,
-                async_upload=True,
-            )
-        )
-        self.log.info(
-            f"SynapseProcessor._handle_async_upload: Async upload initiated for {filename} (size: {size} bytes)"
-        )
-        return task
-
     async def _handle_sync_upload(self, data: BytesIO, filename: str, size: int):
         upload_data = data.read()
         response = await self.client.upload_media(
@@ -102,10 +87,4 @@ class SynapseProcessor:
     async def upload_to_content_repository(
         self, data: BytesIO, filename: str, size: int
     ):
-        async_upload_enabled = self.config.file.get("async_upload", False)
-        async_upload_required = size > 10 * 1024 * 1024
-
-        if async_upload_enabled and async_upload_required:
-            return await self._handle_async_upload(data, filename, size)
-
         return await self._handle_sync_upload(data, filename, size)

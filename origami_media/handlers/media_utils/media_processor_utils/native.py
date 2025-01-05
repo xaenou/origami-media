@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 import asyncio
-import os
 from io import BytesIO
-from typing import TYPE_CHECKING, Optional, Union
+from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
     from aiohttp import ClientSession
@@ -76,15 +75,12 @@ class Native:
 
         return False
 
-    async def client_download(self, url) -> Optional[Union[BytesIO, str]]:
-        output_path = self.config.file.get("output_path", "-")
-        max_retries = self.config.file.get("max_retries", 3)
-        in_memory = output_path == "-"
-        max_file_size_key = "max_in_memory_file_size" if in_memory else "max_file_size"
-        max_file_size = self.config.file.get(max_file_size_key, 0)
+    async def client_download(self, url) -> BytesIO:
+        max_retries = 1
+        max_file_size = self.config.file.get("max_in_memory_file_size", 0)
 
         self.log.info(
-            f"client_download: Starting stream from '{url}' to {'memory' if in_memory else output_path}. "
+            f"client_download: Starting stream from '{url}' to memory. "
             f"client_download: Max size limit: {max_file_size} bytes"
         )
 
@@ -99,44 +95,24 @@ class Native:
 
                 total_bytes = 0
 
-                if in_memory:
-                    output = BytesIO()
-                    async for chunk in response.content.iter_chunked(8192):
-                        chunk_size = len(chunk)
-                        total_bytes += chunk_size
+                output = BytesIO()
+                async for chunk in response.content.iter_chunked(8192):
+                    chunk_size = len(chunk)
+                    total_bytes += chunk_size
 
-                        if max_file_size > 0 and total_bytes > max_file_size:
-                            self.log.error(
-                                f"client_download: Stream size exceeded limit ({total_bytes} > {max_file_size} bytes). Aborting."
-                            )
-                            return None
+                    if max_file_size > 0 and total_bytes > max_file_size:
+                        self.log.error(
+                            f"client_download: Stream size exceeded limit ({total_bytes} > {max_file_size} bytes). Aborting."
+                        )
+                        raise
 
-                        output.write(chunk)
+                    output.write(chunk)
 
-                    output.seek(0)
-                    self.log.info(
-                        f"client_download: Streamed {total_bytes} bytes into memory."
-                    )
-                    return output
-                else:
-                    resolved_path = os.path.abspath(output_path)
-                    with open(resolved_path, "wb") as output:
-                        async for chunk in response.content.iter_chunked(8192):
-                            chunk_size = len(chunk)
-                            total_bytes += chunk_size
-
-                            if max_file_size > 0 and total_bytes > max_file_size:
-                                self.log.error(
-                                    f"client_download: Stream size exceeded limit ({total_bytes} > {max_file_size} bytes). Aborting."
-                                )
-                                return None
-
-                            output.write(chunk)
-
-                    self.log.info(
-                        f"client_download: Streamed {total_bytes} bytes into file: {resolved_path}"
-                    )
-                    return resolved_path
+                output.seek(0)
+                self.log.info(
+                    f"client_download: Streamed {total_bytes} bytes into memory."
+                )
+                return output
 
             except Exception as e:
                 self.log.warning(
@@ -148,4 +124,4 @@ class Native:
         self.log.error(
             f"client_download: Failed to stream data after {max_retries} attempts."
         )
-        return None
+        raise
