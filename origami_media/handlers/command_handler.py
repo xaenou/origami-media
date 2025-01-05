@@ -17,7 +17,7 @@ class CommandHandler:
         self.http = http
 
     async def _query_image(
-        self, query: str, provider: str, api_key: str
+        self, query: str, provider: str, api_key: Optional[str] = None
     ) -> Optional[str]:
 
         if provider == "tenor":
@@ -53,9 +53,20 @@ class CommandHandler:
                 link = result["urls"]["regular"]
             return link
 
-        else:
-            self.log.error(f"Unsupported provider: {provider}")
-            return None
+        if provider == "lexica":
+            url_params = urllib.parse.urlencode({"q": query})
+            base_url = f"https://lexica.art/api/v1/search?{url_params}"
+            async with self.http.get(base_url) as response:
+                data = await response.json()
+                results = data.get("images", [])
+                if not results:
+                    return None
+                result = random.choice(results)
+                link = result["src"]
+            return link
+
+        self.log.error(f"Unsupported provider: {provider}")
+        return None
 
     async def query_image_controller(
         self,
@@ -65,7 +76,9 @@ class CommandHandler:
         if not query:
             raise Exception("Query missing.")
 
-        api_key = self.config.command["query_image"][f"{provider}_api_key"]
+        api_key = None
+        if provider in ["tenor", "unsplash"]:
+            api_key = self.config.command["query_image"][f"{provider}_api_key"]
 
         url = await self._query_image(query=query, provider=provider, api_key=api_key)
         if not url:

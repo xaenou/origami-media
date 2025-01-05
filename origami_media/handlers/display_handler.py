@@ -1,10 +1,12 @@
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional, Tuple
 
 from mautrix.types import (
     AudioInfo,
     ContentURI,
     FileInfo,
     ImageInfo,
+    ReactionEvent,
+    RelationType,
     ThumbnailInfo,
     VideoInfo,
 )
@@ -13,6 +15,7 @@ from mautrix.types.event.type import EventType
 
 if TYPE_CHECKING:
     from maubot.matrix import MaubotMatrixClient, MaubotMessageEvent
+    from mautrix.types import EventID, RoomID
     from mautrix.util.logging.trace import TraceLogger
 
     from origami_media.origami_media import Config
@@ -27,6 +30,50 @@ class DisplayHandler:
         self.log = log
         self.client = client
         self.config = config
+
+    async def _is_reacted(
+        self, room_id: "RoomID", event_id: "EventID", reaction: str
+    ) -> Tuple[bool, Optional["EventID"]]:
+        try:
+            response = await self.client.get_event_context(
+                room_id=room_id, event_id=event_id, limit=10
+            )
+            if not response:
+                return False, None
+
+            reaction_event = next(
+                (
+                    event
+                    for event in response.events_after
+                    if isinstance(event, ReactionEvent)
+                    and (relates_to := getattr(event.content, "relates_to", None))
+                    and relates_to.rel_type == RelationType.ANNOTATION
+                    and relates_to.event_id == event_id
+                    and relates_to.key == reaction
+                    and event.sender == self.client.mxid
+                ),
+                None,
+            )
+
+            return (True, reaction_event.event_id) if reaction_event else (False, None)
+
+        except Exception as e:
+            self.log.error(f"Failed to fetch reaction event: {e}")
+            return False, None
+
+    async def _reaction_controller(
+        self, event: "MaubotMessageEvent", key: str
+    ) -> None:  # Deprecated
+        is_reacted, reaction_id = await self._is_reacted(
+            room_id=event.room_id, event_id=event.event_id, reaction=key
+        )
+        try:
+            if not is_reacted:
+                await event.react(key=key)
+            elif is_reacted and reaction_id:
+                await self.client.redact(room_id=event.room_id, event_id=reaction_id)
+        except Exception as e:
+            self.log.error(f"Failed to handle reaction: {e}")
 
     async def _build_message_content(self, processed_media: "ProcessedMedia"):
         filename = processed_media.filename

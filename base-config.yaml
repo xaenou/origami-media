@@ -14,6 +14,7 @@ whitelist:
   - bitchute.com
   - 4cdn.org
   - tenor.com
+  - unsplash.com
 
 ytdlp:
   active_preset: "Default Preset"

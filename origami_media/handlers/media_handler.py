@@ -97,8 +97,6 @@ class MediaHandler:
     ) -> list[ProcessedMedia]:
         processed_media_array: list[ProcessedMedia] = []
 
-        await self.synapse_processor.reaction_handler(event)
-
         for url in urls:
             try:
                 media_object: Optional["Media"] = (
@@ -131,8 +129,6 @@ class MediaHandler:
                     f"MediaHandler.process: Unexpected error for URL {url}: {e}"
                 )
                 continue
-
-        await self.synapse_processor.reaction_handler(event)
 
         if not processed_media_array:
             raise Exception(

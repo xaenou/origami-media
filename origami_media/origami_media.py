@@ -18,6 +18,7 @@ from .handlers.url_handler import UrlHandler
 class Intent(Enum):
     DEFAULT = auto()
     QUERY = auto()
+    AUDIO = auto()
 
 
 class QueueItem:
@@ -114,28 +115,39 @@ class OrigamiMedia(Plugin):
 
     @cast(Any, event.on)(EventType.ROOM_MESSAGE)
     async def main(self, event: MaubotMessageEvent) -> None:
+        if not event.content.msgtype.is_text or event.sender == self.client.mxid:
+            return
+
+        if cast(str, event.content.body).startswith("!"):
+            await self.command_controller(event=event)
+            return
+
         if not self.config.meta.get("enable_passive_url_detection", False):
             return
-        if (
-            not event.content.msgtype.is_text
-            or event.sender == self.client.mxid
-            or cast(str, event.content.body).startswith("!")
-        ):
-            return
+
         if "http" not in event.content.body and "www" not in event.content.body:
             return
-        try:
 
+        try:
             item = QueueItem(intent=Intent.DEFAULT, event=event, data={})
+            hourglass_reaction_event_id = await event.react("⏳")
+            item.data["active_reaction_id"] = hourglass_reaction_event_id
             self.event_queue.put_nowait(item)
 
         except asyncio.QueueFull:
             self.log.warning("Message queue is full. Dropping incoming message.")
+        except Exception as e:
+            self.log.error(f"{e}")
 
     async def _url_worker(self) -> None:
         while True:
             try:
                 item: QueueItem = await self.event_queue.get()
+                await self.client.redact(
+                    room_id=item.event.room_id, event_id=item.data["active_reaction_id"]
+                )
+                loading_reaction_event_id = await item.event.react("🔄")
+                item.data["active_reaction_id"] = loading_reaction_event_id
 
                 if item.intent == Intent.DEFAULT:
                     item.data["valid_urls"] = await self.url_handler.process(item.event)
@@ -158,6 +170,9 @@ class OrigamiMedia(Plugin):
                 self.log.error(
                     f"[url Worker] Failed to process item for event: {getattr(item.event, 'event_id', 'N/A')} - {e}"
                 )
+                await self.client.redact(
+                    room_id=item.event.room_id, event_id=item.data["active_reaction_id"]
+                )
             finally:
                 self.event_queue.task_done()
 
@@ -178,6 +193,9 @@ class OrigamiMedia(Plugin):
             except Exception as e:
                 self.log.error(
                     f"[Media Worker] Failed to process media for  {getattr(item.event, 'event_id', 'N/A')} - {e}"
+                )
+                await self.client.redact(
+                    room_id=item.event.room_id, event_id=item.data["active_reaction_id"]
                 )
             finally:
                 self.url_event_queue.task_done()
@@ -208,6 +226,9 @@ class OrigamiMedia(Plugin):
                 )
             finally:
                 self.media_event_queue.task_done()
+                await self.client.redact(
+                    room_id=item.event.room_id, event_id=item.data["active_reaction_id"]
+                )
 
     async def stop(self) -> None:
         self.log.info("Shutting down workers...")
@@ -226,75 +247,43 @@ class OrigamiMedia(Plugin):
         self.log.info("All workers stopped cleanly.")
         await super().stop()
 
-    @command.new(
-        name="om",
-        require_subcommand=False,
-        help="Pass in a url and it will add it to the main queue.",
-    )
-    @command.argument("url", pass_raw=True, required=False)
-    async def om(self, event: MaubotMessageEvent, url: str) -> None:
+    async def command_controller(self, event: MaubotMessageEvent):
         if not self.config.meta.get("enable_commands", False):
             return
 
-        if not url:
-            return
+        body = cast(str, event.content.body)
+        parts = body.split(" ", 1)
+        command = parts[0]
+        argument = parts[1] if len(parts) > 1 else ""
 
-        item = QueueItem(intent=Intent.DEFAULT, event=event, data={})
-        self.event_queue.put_nowait(item)
+        query_commands = {
+            "!tenor": "tenor",
+            "!gif": "tenor",
+            "!tr": "tenor",
+            "!unsplash": "unsplash",
+            "!img": "unsplash",
+            "!uh": "unsplash",
+            "lexica": "lexica",
+            "lex": "lexica",
+            "la": "lexica",
+        }
+        try:
+            if command == "!dl":
+                item = QueueItem(intent=Intent.DEFAULT, event=event, data={})
+                hourglass_reaction_event_id = await event.react("⏳")
+                item.data["active_reaction_id"] = hourglass_reaction_event_id
+                self.event_queue.put_nowait(item)
 
-    @command.new(
-        name="tenor",
-        aliases=["gif", "g"],
-        require_subcommand=False,
-        help="Pass in a query and it will return a random gif. Aliases: 'gif', 'g'.",
-    )
-    @command.argument("query", pass_raw=True, required=False)
-    async def tenor(self, event: MaubotMessageEvent, query: str) -> None:
-        if not self.config.meta.get("enable_commands", False):
-            return
+            elif command in query_commands:
+                provider = query_commands[command]
+                item = QueueItem(intent=Intent.QUERY, event=event, data={})
+                hourglass_reaction_event_id = await event.react("⏳")
+                item.data["active_reaction_id"] = hourglass_reaction_event_id
+                item.data["query"] = argument
+                item.data["provider"] = provider
+                self.event_queue.put_nowait(item)
 
-        if not query.strip():
-            await event.respond("Empty query provided. Please provide a valid query.")
-            return
-
-        provider = "tenor"
-
-        item = QueueItem(
-            intent=Intent.QUERY,
-            event=event,
-            data={"query": query, "provider": provider},
-        )
-        self.event_queue.put_nowait(item)
-
-    @command.new(
-        name="unsplash",
-        aliases=["img", "us"],
-        require_subcommand=False,
-        help="Pass in a query and it will return a random image.",
-    )
-    @command.argument("query", pass_raw=True, required=False)
-    async def unsplash(self, event: MaubotMessageEvent, query: str) -> None:
-        if not self.config.meta.get("enable_commands", False):
-            return
-
-        if not query.strip():
-            await event.respond("Empty query provided. Please provide a valid query.")
-            return
-
-        provider = "unsplash"
-
-        item = QueueItem(
-            intent=Intent.QUERY,
-            event=event,
-            data={"query": query, "provider": provider},
-        )
-        self.event_queue.put_nowait(item)
-
-    @command.new(name="debug")
-    @command.argument(name="url", pass_raw=True, required=False)
-    async def debug(self, event: MaubotMessageEvent, url: str) -> None:
-        if self.config.meta.get("debug", False) and self.config.meta.get(
-            "enable_commands", False
-        ):
-            if not url:
+            elif command == "audio":
                 return
+        except asyncio.QueueFull:
+            self.log.warning("Message queue is full. Dropping incoming message.")
