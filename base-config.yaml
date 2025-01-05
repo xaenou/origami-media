@@ -15,6 +15,7 @@ whitelist:
   - 4cdn.org
   - tenor.com
   - unsplash.com
+  - waifu.im
 
 ytdlp:
   active_preset: "Default Preset"

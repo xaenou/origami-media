@@ -65,6 +65,22 @@ class CommandHandler:
                 link = result["src"]
             return link
 
+        if provider == "waifu":
+            url_params = urllib.parse.urlencode(
+                {
+                    "included_tags": "waifu",
+                }
+            )
+            base_url = f"https://api.waifu.im/search?{url_params}"
+            async with self.http.get(base_url) as response:
+                data = await response.json()
+                results = data.get("images", [])
+                if not results:
+                    return None
+                result = random.choice(results)
+                link = result.get("url")
+            return link
+
         self.log.error(f"Unsupported provider: {provider}")
         return None
 
@@ -74,7 +90,7 @@ class CommandHandler:
         provider: str,
     ) -> str:
         if not query:
-            raise Exception("Query missing.")
+            query = "."
 
         api_key = None
         if provider in ["tenor", "unsplash"]:

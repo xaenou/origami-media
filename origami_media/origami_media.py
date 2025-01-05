@@ -268,6 +268,8 @@ class OrigamiMedia(Plugin):
             f"{self.command_prefix}lexica": "lexica",
             f"{self.command_prefix}lex": "lexica",
             f"{self.command_prefix}la": "lexica",
+            f"{self.command_prefix}girl": "waifu",
+            f"{self.command_prefix}g": "waifu",
         }
         try:
             if command == f"{self.command_prefix}dl":
