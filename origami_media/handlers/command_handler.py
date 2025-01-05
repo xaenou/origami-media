@@ -4,13 +4,9 @@ from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
     from aiohttp import ClientSession
-    from maubot.matrix import MaubotMessageEvent
     from mautrix.util.logging.trace import TraceLogger
 
     from origami_media.origami_media import Config
-
-    from .display_handler import DisplayHandler
-    from .media_handler import MediaHandler
 
 
 class CommandHandler:
@@ -63,23 +59,16 @@ class CommandHandler:
 
     async def query_image_controller(
         self,
-        event: "MaubotMessageEvent",
         query: str,
         provider: str,
-        media_handler: "MediaHandler",
-        display_handler: "DisplayHandler",
-    ) -> None:
+    ) -> str:
         if not query:
-            return
+            raise Exception("Query missing.")
 
         api_key = self.config.command["query_image"][f"{provider}_api_key"]
 
         url = await self._query_image(query=query, provider=provider, api_key=api_key)
         if not url:
-            return
+            raise Exception("No url was obtained.")
 
-        processed_media, _ = await media_handler.process(urls=[url], event=event)
-        if not processed_media:
-            return
-
-        await display_handler.render(media=processed_media, event=event, reply=False)
+        return url

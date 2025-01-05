@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 from io import BytesIO
 from typing import TYPE_CHECKING, AsyncIterable, Optional, Tuple
 

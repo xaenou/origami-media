@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 
     from origami_media.origami_media import Config
 
-    from .media_utils.models import ProcessedMedia
+    from .media_handler import ProcessedMedia
 
 
 class DisplayHandler:
@@ -105,14 +105,21 @@ class DisplayHandler:
         reply: bool = True,
     ) -> None:
         for media_object in media:
+            try:
+                content = await self._build_message_content(
+                    processed_media=media_object
+                )
 
-            content = await self._build_message_content(processed_media=media_object)
+                room_id = event.room_id
 
-            room_id = event.room_id
+                if reply:
+                    content.set_reply(event, disable_fallback=True)
 
-            if reply:
-                content.set_reply(event, disable_fallback=True)
-
-            await self.client.send_message_event(
-                room_id=room_id, event_type=EventType.ROOM_MESSAGE, content=content
-            )
+                await self.client.send_message_event(
+                    room_id=room_id, event_type=EventType.ROOM_MESSAGE, content=content
+                )
+            except Exception as e:
+                self.log.error(
+                    f"MediaHandler.process: Unexpected error when trying to render {event.event_id}: {e}"
+                )
+                continue

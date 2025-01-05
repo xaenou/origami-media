@@ -1,5 +1,5 @@
 import re
-from typing import TYPE_CHECKING, List, Optional, Tuple, TypeAlias
+from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
 if TYPE_CHECKING:
@@ -7,9 +7,6 @@ if TYPE_CHECKING:
     from mautrix.util.logging.trace import TraceLogger
 
     from origami_media.origami_media import Config
-
-
-processed_url_event: TypeAlias = Tuple[Optional[List[str]], "MaubotMessageEvent"]
 
 
 class UrlHandler:
@@ -59,16 +56,16 @@ class UrlHandler:
         timestamp = f"&t={timestamp_match.group(1)}" if timestamp_match else ""
         return f"https://www.youtube.com/watch?v={video_id}{timestamp}"
 
-    async def process(self, event: "MaubotMessageEvent") -> processed_url_event:
+    async def process(self, event: "MaubotMessageEvent") -> list[str]:
         valid_urls = []
         message = str(event.content.body)
 
         urls = self._extract_urls(message)
         if len(urls) > self.config.queue.get("max_message_url_count", 3):
-            self.log.warning("UrlHandler.process: urls exceed message limit.")
+            raise Exception("urls exceed message limit.")
 
         if not urls:
-            self.log.warning("UrlHandler.process: no urls found in the message.")
+            raise Exception("No urls found in message.")
 
         sanitized_message = message
         url_mapping = {}
@@ -90,7 +87,7 @@ class UrlHandler:
                     valid_urls.append(url)
 
             except Exception:
-                self.log.error(f"UrlHandler.process: error processing {url}")
+                self.log.error(f"Error processing {url}")
 
         if self.config.meta.get(
             "censor_trackers", True
@@ -103,25 +100,21 @@ class UrlHandler:
             await event.reply(content=sanitized_message)
 
         if not valid_urls:
-            self.log.warning("UrlHandler.process: No valid URLs were processed.")
-            return (None, event)
+            raise Exception("No valid urls were processed.")
 
         unique_valid_urls = list(dict.fromkeys(valid_urls))
-        self.log.info(f"Urls added to queue: {unique_valid_urls}")
 
-        return (unique_valid_urls, event)
+        return unique_valid_urls
 
-    def process_string(
-        self, message: str, event: "MaubotMessageEvent"
-    ) -> tuple[list[str], "MaubotMessageEvent"]:
+    def process_string(self, message: str) -> list[str]:
         valid_urls = []
         urls = self._extract_urls(message)
 
         if len(urls) > self.config.queue.get("max_message_url_count", 3):
-            self.log.warning("UrlHandler.process_string: urls exceed message limit.")
+            raise Exception("urls exceed message limit.")
 
         if not urls:
-            self.log.warning("UrlHandler.process_string: no urls found in the message.")
+            raise Exception("No urls found in message.")
 
         url_mapping = {}
 
@@ -142,13 +135,11 @@ class UrlHandler:
                     valid_urls.append(url)
 
             except Exception:
-                self.log.error(f"UrlHandler.process_string: error processing {url}")
+                self.log.error(f"Error processing {url}")
 
         if not valid_urls:
-            self.log.warning("UrlHandler.process_string: No valid URLs were processed.")
-            return ([], event)
+            raise Exception("No valid urls were processed.")
 
         unique_valid_urls = list(dict.fromkeys(valid_urls))
-        self.log.info(f"Urls processed: {unique_valid_urls}")
 
-        return (unique_valid_urls, event)
+        return unique_valid_urls

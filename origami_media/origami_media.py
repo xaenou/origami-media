@@ -1,5 +1,6 @@
 import asyncio
-from typing import Any, Dict, Type, cast
+from enum import Enum, auto
+from typing import Any, Dict, Optional, Type, cast
 
 from maubot.handlers import command, event
 from maubot.matrix import MaubotMessageEvent
@@ -12,6 +13,27 @@ from .handlers.dependency_handler import DependencyHandler
 from .handlers.display_handler import DisplayHandler
 from .handlers.media_handler import MediaHandler
 from .handlers.url_handler import UrlHandler
+
+
+class Intent(Enum):
+    DEFAULT = auto()
+    QUERY = auto()
+
+
+class QueueItem:
+    def __init__(
+        self,
+        intent: Intent,
+        event: MaubotMessageEvent,
+        data: Optional[Dict[str, Any]] = None,
+    ):
+        self.intent = intent
+        self.event = event
+        self.data = data or {}
+
+    def update(self, intent: Intent, **data_updates):
+        self.intent = intent
+        self.data.update(data_updates)
 
 
 class Config(BaseProxyConfig):
@@ -81,9 +103,9 @@ class OrigamiMedia(Plugin):
         self.media_event_queue = asyncio.Queue()
 
         self.workers = [
-            asyncio.create_task(self._url_worker()),
-            asyncio.create_task(self._media_worker()),
-            asyncio.create_task(self._display_worker()),
+            asyncio.create_task(self._url_worker(), name="url_worker"),
+            asyncio.create_task(self._media_worker(), name="media_worker"),
+            asyncio.create_task(self._display_worker(), name="display_worker"),
         ]
 
     @classmethod
@@ -103,35 +125,38 @@ class OrigamiMedia(Plugin):
         if "http" not in event.content.body and "www" not in event.content.body:
             return
         try:
-            self.event_queue.put_nowait(event)
-            self.log.info("Event added to the processing queue.")
+
+            item = QueueItem(intent=Intent.DEFAULT, event=event, data={})
+            self.event_queue.put_nowait(item)
+
         except asyncio.QueueFull:
             self.log.warning("Message queue is full. Dropping incoming message.")
 
     async def _url_worker(self) -> None:
         while True:
             try:
-                event = await self.event_queue.get()
-                self.log.info(
-                    f"[url Worker] Sending event to url_handler: {event.event_id}"
-                )
-                valid_urls, event = await self.url_handler.process(event)
-                if valid_urls:
-                    processed_url_event = (valid_urls, event)
-                    self.log.info(
-                        f"[url Worker] Extracted valid urls: {valid_urls} for {event.event_id}"
+                item: QueueItem = await self.event_queue.get()
+
+                if item.intent == Intent.DEFAULT:
+                    item.data["valid_urls"] = await self.url_handler.process(item.event)
+                    await self.url_event_queue.put(item)
+
+                elif item.intent == Intent.QUERY:
+                    url = await self.command_handler.query_image_controller(
+                        query=item.data["query"],
+                        provider=item.data["provider"],
                     )
-                    await self.url_event_queue.put(processed_url_event)
-                else:
-                    self.log.info(
-                        f"[url Worker] No valid urls were found for {event.event_id}"
+                    item.data["valid_urls"] = self.url_handler.process_string(
+                        message=url
                     )
+                    await self.url_event_queue.put(item)
+
             except asyncio.CancelledError:
                 self.log.info("[url Worker] Shutting down gracefully.")
                 break
             except Exception as e:
                 self.log.error(
-                    f"[url Worker] Failed to extract urls for {event.event_id} in url_handler: {e}"
+                    f"[url Worker] Failed to process item for event: {getattr(item.event, 'event_id', 'N/A')} - {e}"
                 )
             finally:
                 self.event_queue.task_done()
@@ -139,30 +164,20 @@ class OrigamiMedia(Plugin):
     async def _media_worker(self) -> None:
         while True:
             try:
-                processed_url_event = await self.url_event_queue.get()
-                valid_urls, event = processed_url_event
-                self.log.info(
-                    f"[Media Worker] Sending valid urls to media_handler: {valid_urls} for {event.event_id}"
-                )
-                processed_media_list, event = await self.media_handler.process(
-                    urls=valid_urls, event=event
-                )
-                if processed_media_list:
-                    processed_media_event = (processed_media_list, event)
-                    self.log.info(
-                        f"[Media Worker] Uploaded media: {processed_media_list} for {event.event_id}"
+                item: QueueItem = await self.url_event_queue.get()
+
+                if item.intent == Intent.DEFAULT or item.intent == Intent.QUERY:
+                    item.data["processed_media"] = await self.media_handler.process(
+                        urls=item.data["valid_urls"], event=item.event
                     )
-                    await self.media_event_queue.put(processed_media_event)
-                else:
-                    self.log.info(
-                        f"[url Worker] No media was processed for {event.event_id}"
-                    )
+                    await self.media_event_queue.put(item)
+
             except asyncio.CancelledError:
                 self.log.info("[Media Worker] Shutting down gracefully.")
                 break
             except Exception as e:
                 self.log.error(
-                    f"[Media Worker] Failed to process media for {event.event_id} in media_handler: {e}"
+                    f"[Media Worker] Failed to process media for  {getattr(item.event, 'event_id', 'N/A')} - {e}"
                 )
             finally:
                 self.url_event_queue.task_done()
@@ -170,20 +185,26 @@ class OrigamiMedia(Plugin):
     async def _display_worker(self) -> None:
         while True:
             try:
-                processed_media_event = await self.media_event_queue.get()
-                processed_media_list, event = processed_media_event
-                self.log.info(
-                    f"[Display Worker] Sending processed_media_list to display_handler: {processed_media_list} for {event.event_id}"
-                )
-                await self.display_handler.render(
-                    media=processed_media_list, event=event
-                )
+                item: QueueItem = await self.media_event_queue.get()
+
+                if item.intent == Intent.DEFAULT:
+                    await self.display_handler.render(
+                        media=item.data["processed_media"], event=item.event
+                    )
+
+                elif item.intent == Intent.QUERY:
+                    await self.display_handler.render(
+                        media=item.data["processed_media"],
+                        event=item.event,
+                        reply=False,
+                    )
+
             except asyncio.CancelledError:
                 self.log.info("[Display Worker] Shutting down gracefully.")
                 break
             except Exception as e:
                 self.log.error(
-                    f"[Display Worker] Failed to render display for {event.event_id} in display_handler: {e}"
+                    f"[Display Worker] Failed to render for {getattr(item.event, 'event_id', 'N/A')} in display_handler: {e}"
                 )
             finally:
                 self.media_event_queue.task_done()
@@ -208,7 +229,7 @@ class OrigamiMedia(Plugin):
     @command.new(
         name="om",
         require_subcommand=False,
-        help="Pass in a url and it will return the media.",
+        help="Pass in a url and it will add it to the main queue.",
     )
     @command.argument("url", pass_raw=True, required=False)
     async def om(self, event: MaubotMessageEvent, url: str) -> None:
@@ -218,15 +239,8 @@ class OrigamiMedia(Plugin):
         if not url:
             return
 
-        urls, _ = self.url_handler.process_string(message=url, event=event)
-        if not urls:
-            return
-
-        processed_media, _ = await self.media_handler.process(urls=urls, event=event)
-        if not processed_media:
-            return
-
-        await self.display_handler.render(media=processed_media, event=event)
+        item = QueueItem(intent=Intent.DEFAULT, event=event, data={})
+        self.event_queue.put_nowait(item)
 
     @command.new(
         name="tenor",
@@ -239,15 +253,18 @@ class OrigamiMedia(Plugin):
         if not self.config.meta.get("enable_commands", False):
             return
 
+        if not query.strip():
+            await event.respond("Empty query provided. Please provide a valid query.")
+            return
+
         provider = "tenor"
 
-        await self.command_handler.query_image_controller(
+        item = QueueItem(
+            intent=Intent.QUERY,
             event=event,
-            query=query,
-            provider=provider,
-            media_handler=self.media_handler,
-            display_handler=self.display_handler,
+            data={"query": query, "provider": provider},
         )
+        self.event_queue.put_nowait(item)
 
     @command.new(
         name="unsplash",
@@ -260,15 +277,18 @@ class OrigamiMedia(Plugin):
         if not self.config.meta.get("enable_commands", False):
             return
 
+        if not query.strip():
+            await event.respond("Empty query provided. Please provide a valid query.")
+            return
+
         provider = "unsplash"
 
-        await self.command_handler.query_image_controller(
+        item = QueueItem(
+            intent=Intent.QUERY,
             event=event,
-            query=query,
-            provider=provider,
-            media_handler=self.media_handler,
-            display_handler=self.display_handler,
+            data={"query": query, "provider": provider},
         )
+        self.event_queue.put_nowait(item)
 
     @command.new(name="debug")
     @command.argument(name="url", pass_raw=True, required=False)
