@@ -47,6 +47,7 @@ log: # wip
   info: true
 
 command:
+  command_prefix: "!"
   query_image:
     tenor_api_key:
     unsplash_api_key:

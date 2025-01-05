@@ -109,6 +109,8 @@ class OrigamiMedia(Plugin):
             asyncio.create_task(self._display_worker(), name="display_worker"),
         ]
 
+        self.command_prefix = self.config.command.get("command_prefix", "!")
+
     @classmethod
     def get_config_class(cls) -> Type[BaseProxyConfig]:
         return Config
@@ -118,7 +120,7 @@ class OrigamiMedia(Plugin):
         if not event.content.msgtype.is_text or event.sender == self.client.mxid:
             return
 
-        if cast(str, event.content.body).startswith("!"):
+        if cast(str, event.content.body).startswith(self.command_prefix):
             await self.command_controller(event=event)
             return
 
@@ -257,18 +259,18 @@ class OrigamiMedia(Plugin):
         argument = parts[1] if len(parts) > 1 else ""
 
         query_commands = {
-            "!tenor": "tenor",
-            "!gif": "tenor",
-            "!tr": "tenor",
-            "!unsplash": "unsplash",
-            "!img": "unsplash",
-            "!uh": "unsplash",
-            "lexica": "lexica",
-            "lex": "lexica",
-            "la": "lexica",
+            f"{self.command_prefix}tenor": "tenor",
+            f"{self.command_prefix}gif": "tenor",
+            f"{self.command_prefix}tr": "tenor",
+            f"{self.command_prefix}unsplash": "unsplash",
+            f"{self.command_prefix}img": "unsplash",
+            f"{self.command_prefix}uh": "unsplash",
+            f"{self.command_prefix}lexica": "lexica",
+            f"{self.command_prefix}lex": "lexica",
+            f"{self.command_prefix}la": "lexica",
         }
         try:
-            if command == "!dl":
+            if command == f"{self.command_prefix}dl":
                 item = QueueItem(intent=Intent.DEFAULT, event=event, data={})
                 hourglass_reaction_event_id = await event.react("⏳")
                 item.data["active_reaction_id"] = hourglass_reaction_event_id
@@ -283,7 +285,7 @@ class OrigamiMedia(Plugin):
                 item.data["provider"] = provider
                 self.event_queue.put_nowait(item)
 
-            elif command == "audio":
+            elif command == f"{self.command_prefix}audio":
                 return
         except asyncio.QueueFull:
             self.log.warning("Message queue is full. Dropping incoming message.")
