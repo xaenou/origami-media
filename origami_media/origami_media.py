@@ -2,7 +2,7 @@ import asyncio
 from enum import Enum, auto
 from typing import Any, Dict, Optional, Type, cast
 
-from maubot.handlers import command, event
+from maubot.handlers import event
 from maubot.matrix import MaubotMessageEvent
 from maubot.plugin_base import Plugin
 from mautrix.types import EventType
@@ -99,14 +99,15 @@ class OrigamiMedia(Plugin):
         self.command_handler = CommandHandler(
             config=self.config, log=self.log, http=self.http
         )
-        self.event_queue = asyncio.Queue(maxsize=self.config.queue.get("max_size", 100))
-        self.url_event_queue = asyncio.Queue()
-        self.media_event_queue = asyncio.Queue()
 
+        self.active_reaction_tasks = set()
+        self.reaction_lock = asyncio.Lock()
+
+        self.event_queue = asyncio.Queue(self.config.queue.get("max_size", 10))
+        worker_count = self.config.queue.get("max_pipeline_workers", 1)
         self.workers = [
-            asyncio.create_task(self._url_worker(), name="url_worker"),
-            asyncio.create_task(self._media_worker(), name="media_worker"),
-            asyncio.create_task(self._display_worker(), name="display_worker"),
+            asyncio.create_task(self._event_worker(), name=f"worker_{i}")
+            for i in range(worker_count)
         ]
 
         self.command_prefix = self.config.command.get("command_prefix", "!")
@@ -116,140 +117,47 @@ class OrigamiMedia(Plugin):
         return Config
 
     @cast(Any, event.on)(EventType.ROOM_MESSAGE)
-    async def main(self, event: MaubotMessageEvent) -> None:
+    def main(self, event: MaubotMessageEvent) -> None:
         if not event.content.msgtype.is_text or event.sender == self.client.mxid:
             return
 
-        if cast(str, event.content.body).startswith(self.command_prefix):
-            await self.command_controller(event=event)
+        item = self._handle_active(event)
+        if item:
+            asyncio.create_task(self._enqueue_item(item))
             return
 
+        item = self._handle_passive(event)
+        if item:
+            asyncio.create_task(self._enqueue_item(item))
+            return
+
+    def _handle_passive(self, event: MaubotMessageEvent) -> Optional[QueueItem]:
         if not self.config.meta.get("enable_passive_url_detection", False):
             return
 
-        if "http" not in event.content.body and "www" not in event.content.body:
+        if "http" not in event.content.body:
             return
 
-        try:
-            item = QueueItem(intent=Intent.DEFAULT, event=event, data={})
-            hourglass_reaction_event_id = await event.react("⏳")
-            item.data["active_reaction_id"] = hourglass_reaction_event_id
-            self.event_queue.put_nowait(item)
+        result = self.url_handler.process(event)
+        if not result:
+            return
 
-        except asyncio.QueueFull:
-            self.log.warning("Message queue is full. Dropping incoming message.")
-        except Exception as e:
-            self.log.error(f"{e}")
+        item = QueueItem(
+            intent=Intent.DEFAULT, event=event, data={"url_result": result}
+        )
+        return item
 
-    async def _url_worker(self) -> None:
-        while True:
-            try:
-                item: QueueItem = await self.event_queue.get()
-                await self.client.redact(
-                    room_id=item.event.room_id, event_id=item.data["active_reaction_id"]
-                )
-                loading_reaction_event_id = await item.event.react("🔄")
-                item.data["active_reaction_id"] = loading_reaction_event_id
+    def _handle_active(self, event: MaubotMessageEvent) -> Optional[QueueItem]:
+        if not cast(str, event.content.body).startswith(self.command_prefix):
+            return
 
-                if item.intent == Intent.DEFAULT:
-                    item.data["valid_urls"] = await self.url_handler.process(item.event)
-                    await self.url_event_queue.put(item)
+        item = self._command_controller(event=event)
+        if not item:
+            return
 
-                elif item.intent == Intent.QUERY:
-                    url = await self.command_handler.query_image_controller(
-                        query=item.data["query"],
-                        provider=item.data["provider"],
-                    )
-                    item.data["valid_urls"] = self.url_handler.process_string(
-                        message=url
-                    )
-                    await self.url_event_queue.put(item)
+        return item
 
-            except asyncio.CancelledError:
-                self.log.info("[url Worker] Shutting down gracefully.")
-                break
-            except Exception as e:
-                self.log.error(
-                    f"[url Worker] Failed to process item for event: {getattr(item.event, 'event_id', 'N/A')} - {e}"
-                )
-                await self.client.redact(
-                    room_id=item.event.room_id, event_id=item.data["active_reaction_id"]
-                )
-            finally:
-                self.event_queue.task_done()
-
-    async def _media_worker(self) -> None:
-        while True:
-            try:
-                item: QueueItem = await self.url_event_queue.get()
-
-                if item.intent == Intent.DEFAULT or item.intent == Intent.QUERY:
-                    item.data["processed_media"] = await self.media_handler.process(
-                        urls=item.data["valid_urls"], event=item.event
-                    )
-                    await self.media_event_queue.put(item)
-
-            except asyncio.CancelledError:
-                self.log.info("[Media Worker] Shutting down gracefully.")
-                break
-            except Exception as e:
-                self.log.error(
-                    f"[Media Worker] Failed to process media for  {getattr(item.event, 'event_id', 'N/A')} - {e}"
-                )
-                await self.client.redact(
-                    room_id=item.event.room_id, event_id=item.data["active_reaction_id"]
-                )
-            finally:
-                self.url_event_queue.task_done()
-
-    async def _display_worker(self) -> None:
-        while True:
-            try:
-                item: QueueItem = await self.media_event_queue.get()
-
-                if item.intent == Intent.DEFAULT:
-                    await self.display_handler.render(
-                        media=item.data["processed_media"], event=item.event
-                    )
-
-                elif item.intent == Intent.QUERY:
-                    await self.display_handler.render(
-                        media=item.data["processed_media"],
-                        event=item.event,
-                        reply=False,
-                    )
-
-            except asyncio.CancelledError:
-                self.log.info("[Display Worker] Shutting down gracefully.")
-                break
-            except Exception as e:
-                self.log.error(
-                    f"[Display Worker] Failed to render for {getattr(item.event, 'event_id', 'N/A')} in display_handler: {e}"
-                )
-            finally:
-                self.media_event_queue.task_done()
-                await self.client.redact(
-                    room_id=item.event.room_id, event_id=item.data["active_reaction_id"]
-                )
-
-    async def stop(self) -> None:
-        self.log.info("Shutting down workers...")
-        for task in self.workers:
-            task.cancel()
-
-        results = await asyncio.gather(*self.workers, return_exceptions=True)
-        for task, result in zip(self.workers, results):
-            if isinstance(result, Exception) and not isinstance(
-                result, asyncio.CancelledError
-            ):
-                self.log.error(
-                    f"Task {task.get_name()} failed during shutdown: {result}"
-                )
-
-        self.log.info("All workers stopped cleanly.")
-        await super().stop()
-
-    async def command_controller(self, event: MaubotMessageEvent):
+    def _command_controller(self, event: MaubotMessageEvent) -> Optional[QueueItem]:
         if not self.config.meta.get("enable_commands", False):
             return
 
@@ -274,20 +182,99 @@ class OrigamiMedia(Plugin):
         try:
             if command == f"{self.command_prefix}dl":
                 item = QueueItem(intent=Intent.DEFAULT, event=event, data={})
-                hourglass_reaction_event_id = await event.react("⏳")
-                item.data["active_reaction_id"] = hourglass_reaction_event_id
-                self.event_queue.put_nowait(item)
+                return item
 
             elif command in query_commands:
                 provider = query_commands[command]
                 item = QueueItem(intent=Intent.QUERY, event=event, data={})
-                hourglass_reaction_event_id = await event.react("⏳")
-                item.data["active_reaction_id"] = hourglass_reaction_event_id
                 item.data["query"] = argument
                 item.data["provider"] = provider
-                self.event_queue.put_nowait(item)
+                return item
 
             elif command == f"{self.command_prefix}audio":
                 return
         except asyncio.QueueFull:
             self.log.warning("Message queue is full. Dropping incoming message.")
+
+    async def _enqueue_item(self, item: QueueItem):
+        async with self.reaction_lock:
+            if len(self.active_reaction_tasks) >= self.config.queue.get(
+                "max_concurrent_reaction_tasks", 10
+            ):
+                self.log.warning(
+                    "Maximum number of active reactions reached. Skipping reaction."
+                )
+                return
+
+            try:
+                hourglass_reaction_event_id = await item.event.react("⏳")
+                item.data["active_reaction_id"] = hourglass_reaction_event_id
+                self.active_reaction_tasks.add(hourglass_reaction_event_id)
+                self.event_queue.put_nowait(item)
+            except asyncio.QueueFull:
+                self.log.warning("Message queue is full. Dropping incoming message.")
+            except Exception as e:
+                self.log.error(f"Failed to add reaction: {e}")
+
+    async def _event_worker(self) -> None:
+        while True:
+            try:
+                item: QueueItem = await self.event_queue.get()
+                async with self.reaction_lock:
+                    self.active_reaction_tasks.discard(item.data["active_reaction_id"])
+
+                await self.client.redact(
+                    room_id=item.event.room_id, event_id=item.data["active_reaction_id"]
+                )
+                loading_reaction_event_id = await item.event.react("🔄")
+                item.data["active_reaction_id"] = loading_reaction_event_id
+
+                if item.intent == Intent.DEFAULT:
+                    valid_urls = await self.url_handler.process(item.event)
+                    processed_media = await self.media_handler.process(
+                        urls=valid_urls, event=item.event
+                    )
+                    await self.display_handler.render(
+                        media=processed_media, event=item.event
+                    )
+
+                elif item.intent == Intent.QUERY:
+                    url = await self.command_handler.query_image_controller(
+                        query=item.data["query"],
+                        provider=item.data["provider"],
+                    )
+                    valid_urls = self.url_handler.process_string(message=url)
+                    processed_media = await self.media_handler.process(
+                        urls=valid_urls, event=item.event
+                    )
+                    await self.display_handler.render(
+                        media=processed_media, event=item.event, reply=False
+                    )
+
+            except asyncio.CancelledError:
+                self.log.info("[url Worker] Shutting down gracefully.")
+                break
+            except Exception as e:
+                self.log.error(
+                    f"[url Worker] Failed to process item for event: {getattr(item.event, 'event_id', 'N/A')} - {e}"
+                )
+                try:
+                    await self.client.redact(
+                        room_id=item.event.room_id,
+                        event_id=item.data["active_reaction_id"],
+                    )
+                except Exception as redact_error:
+                    self.log.warning(
+                        f"Failed to redact after exception: {redact_error}"
+                    )
+            finally:
+                self.event_queue.task_done()
+
+    async def stop(self) -> None:
+        self.log.info("Stopping OrigamiMedia workers...")
+        for task in self.workers:
+            task.cancel()
+
+        await asyncio.gather(*self.workers, return_exceptions=True)
+        self.log.info("All workers stopped cleanly.")
+        await super().stop()

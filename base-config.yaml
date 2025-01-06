@@ -38,7 +38,9 @@ file:
   max_file_size: 104857600 # bytes
 
 queue:
-  max_size: 12
+  max_size: 100
+  max_concurrent_reaction_tasks: 10
+  max_pipeline_workers: 1
   max_message_url_count: 1
 
 log: # wip
