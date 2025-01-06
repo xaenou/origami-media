@@ -66,7 +66,7 @@ class Ffmpeg:
             "-i",
             stream_url,
             "-t",
-            "10",
+            length,
             "-c",
             "copy",
             "-bsf:a",
