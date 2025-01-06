@@ -103,7 +103,9 @@ class OrigamiMedia(Plugin):
         self.active_reaction_tasks = set()
         self.reaction_lock = asyncio.Lock()
 
-        self.event_queue = asyncio.Queue(self.config.queue.get("max_size", 10))
+        self.event_queue = asyncio.Queue(
+            self.config.queue.get("max_pipeline_queue_size", 10)
+        )
         worker_count = self.config.queue.get("max_pipeline_workers", 1)
         self.workers = [
             asyncio.create_task(self._event_worker(), name=f"worker_{i}")
@@ -143,7 +145,7 @@ class OrigamiMedia(Plugin):
             return
 
         item = QueueItem(
-            intent=Intent.DEFAULT, event=event, data={"url_result": result}
+            intent=Intent.DEFAULT, event=event, data={"valid_urls": result}
         )
         return item
 
@@ -202,7 +204,9 @@ class OrigamiMedia(Plugin):
                 "max_concurrent_reaction_tasks", 10
             ):
                 self.log.warning(
-                    "Maximum number of active reactions reached. Skipping reaction."
+                    f"Skipping reaction for event {item.event.event_id}: "
+                    f"Active reactions limit reached ({len(self.active_reaction_tasks)}/"
+                    f"{self.config.queue.get('max_concurrent_reaction_tasks')}."
                 )
                 return
 
@@ -220,17 +224,32 @@ class OrigamiMedia(Plugin):
         while True:
             try:
                 item: QueueItem = await self.event_queue.get()
-                async with self.reaction_lock:
-                    self.active_reaction_tasks.discard(item.data["active_reaction_id"])
+                reaction_id = item.data.get("active_reaction_id")
 
-                await self.client.redact(
-                    room_id=item.event.room_id, event_id=item.data["active_reaction_id"]
-                )
-                loading_reaction_event_id = await item.event.react("🔄")
-                item.data["active_reaction_id"] = loading_reaction_event_id
+                if reaction_id:
+                    async with self.reaction_lock:
+                        self.active_reaction_tasks.discard(reaction_id)
+
+                    try:
+                        await self.client.redact(
+                            room_id=item.event.room_id,
+                            event_id=reaction_id,
+                        )
+                    except Exception as redact_error:
+                        self.log.warning(
+                            f"Failed to redact reaction {reaction_id}: {redact_error}"
+                        )
+
+                try:
+                    loading_reaction_event_id = await item.event.react("🔄")
+                    item.data["active_reaction_id"] = loading_reaction_event_id
+                except Exception as reaction_error:
+                    self.log.warning(
+                        f"Failed to add '🔄' reaction for event {getattr(item.event, 'event_id', 'N/A')}: {reaction_error}"
+                    )
 
                 if item.intent == Intent.DEFAULT:
-                    valid_urls = await self.url_handler.process(item.event)
+                    valid_urls = item.data["valid_urls"]
                     processed_media = await self.media_handler.process(
                         urls=valid_urls, event=item.event
                     )
@@ -252,29 +271,43 @@ class OrigamiMedia(Plugin):
                     )
 
             except asyncio.CancelledError:
-                self.log.info("[url Worker] Shutting down gracefully.")
+                self.log.info("[Worker] Shutting down gracefully.")
                 break
+
             except Exception as e:
                 self.log.error(
-                    f"[url Worker] Failed to process item for event: {getattr(item.event, 'event_id', 'N/A')} - {e}"
+                    f"[Worker] Failed to process event (Room: {getattr(item.event, 'room_id', 'N/A')}, "
+                    f"Event: {getattr(item.event, 'event_id', 'N/A')}) - {e}"
                 )
                 try:
-                    await self.client.redact(
-                        room_id=item.event.room_id,
-                        event_id=item.data["active_reaction_id"],
-                    )
+                    reaction_id = item.data.get("active_reaction_id")
+                    if reaction_id:
+                        await self.client.redact(
+                            room_id=item.event.room_id,
+                            event_id=reaction_id,
+                        )
                 except Exception as redact_error:
                     self.log.warning(
-                        f"Failed to redact after exception: {redact_error}"
+                        f"Failed to redact after exception (Reaction ID: {reaction_id}): {redact_error}"
                     )
+
             finally:
                 self.event_queue.task_done()
+                async with self.reaction_lock:
+                    reaction_id = item.data.get("active_reaction_id")
+                    if reaction_id:
+                        self.active_reaction_tasks.discard(reaction_id)
 
     async def stop(self) -> None:
         self.log.info("Stopping OrigamiMedia workers...")
+
         for task in self.workers:
             task.cancel()
 
         await asyncio.gather(*self.workers, return_exceptions=True)
+
+        async with self.reaction_lock:
+            self.active_reaction_tasks.clear()
+
         self.log.info("All workers stopped cleanly.")
         await super().stop()
