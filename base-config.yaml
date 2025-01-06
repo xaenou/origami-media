@@ -28,6 +28,7 @@ ytdlp:
 
 ffmpeg:
   enable_livestream_previews: True
+  livestream_preview_length: 10 # seconds
   livestream_args: false # not yet implemented
   enable_thumbnail_generation: true
   thumbnail_args: false # not yet implemented

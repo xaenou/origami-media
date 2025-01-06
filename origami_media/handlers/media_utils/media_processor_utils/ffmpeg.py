@@ -59,6 +59,7 @@ class Ffmpeg:
 
     async def capture_livestream(self, stream_url: str) -> BytesIO:
         self.log.info("Downloading livestream preview...")
+        length = self.config.ffmpeg.get("livestream_preview_length", 10)
 
         ffmpeg_cmd = [
             "ffmpeg",
