@@ -38,10 +38,25 @@ file:
   max_file_size: 104857600 # bytes
 
 queue:
-  max_pipeline_queue_size: 100
-  max_concurrent_reaction_tasks: 10
-  max_pipeline_workers: 1
-  max_message_url_count: 1
+  preprocessor_worker_limit: 10
+  # [Preprocess Worker]
+  # Role: Dynamically instantiated asyncio tasks that handle event preprocessing.
+  # Trigger: Activated when validated events arrive from the main event loop.
+  # Purpose: Add the initial hourglass reaction and enqueue the preprocessed event.
+
+  event_queue_capacity: 100
+  # [Preprocessed Event Queue]
+  # Role: Static asyncio queue buffer for validated, preprocessed events.
+  # Trigger: Instantiated in the plugin start method.
+  # Purpose: Prevents overload by buffering events when downstream processing lags behind event arrival.
+
+  processor_worker_count: 1
+  # [Process Worker]
+  # Role: Static asyncio tasks handle event processing.
+  # Trigger: Instantiated in the plugin start method.
+  # Purpose: Continuously dequeues, processes, and renders media.
+
+  max_message_url_count: 1 # If a message has >= this amount of urls it is not processed.
 
 log: # wip
   debug: true

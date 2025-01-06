@@ -1,5 +1,5 @@
 import re
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 from urllib.parse import urlparse
 
 if TYPE_CHECKING:
@@ -56,19 +56,24 @@ class UrlHandler:
         timestamp = f"&t={timestamp_match.group(1)}" if timestamp_match else ""
         return f"https://www.youtube.com/watch?v={video_id}{timestamp}"
 
-    async def process(self, event: "MaubotMessageEvent") -> list[str]:
+    def process(
+        self, event: "MaubotMessageEvent"
+    ) -> Optional[tuple[list[str], str, bool]]:
         valid_urls = []
         message = str(event.content.body)
 
         urls = self._extract_urls(message)
         if len(urls) > self.config.queue.get("max_message_url_count", 3):
-            raise Exception("urls exceed message limit.")
+            self.log.warning("urls exceed message limit.")
+            return None
 
         if not urls:
-            raise Exception("No urls found in message.")
+            self.log.warning("No urls found in message.")
+            return None
 
         sanitized_message = message
         url_mapping = {}
+        should_censor = False
 
         for url in urls:
             try:
@@ -95,16 +100,19 @@ class UrlHandler:
             sanitized_message = "Tracking parameters removed:\n" + sanitized_message
             for original, processed in url_mapping.items():
                 sanitized_message = sanitized_message.replace(original, processed)
-
-            await event.redact(reason="Redacted for tracking URL.")
-            await event.reply(content=sanitized_message)
+                should_censor = True
 
         if not valid_urls:
-            raise Exception("No valid urls were processed.")
+            self.log.warning("No valid urls were processed.")
+            return None
 
         unique_valid_urls = list(dict.fromkeys(valid_urls))
 
-        return unique_valid_urls
+        return unique_valid_urls, sanitized_message, should_censor
+
+    async def censor(self, sanitized_message, event):
+        await event.redact(reason="Redacted for tracking URL.")
+        await event.reply(content=sanitized_message)
 
     def process_string(self, message: str) -> list[str]:
         valid_urls = []

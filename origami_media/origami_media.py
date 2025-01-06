@@ -100,16 +100,19 @@ class OrigamiMedia(Plugin):
             config=self.config, log=self.log, http=self.http
         )
 
-        self.active_reaction_tasks = set()
-        self.reaction_lock = asyncio.Lock()
+        self.preprocessor_worker_limit = self.config.queue.get(
+            "preprocessor_worker_limit", 10
+        )
+        self.initial_reaction_tasks = set()
+        self.initial_reaction_lock = asyncio.Lock()
 
         self.event_queue = asyncio.Queue(
-            self.config.queue.get("max_pipeline_queue_size", 10)
+            self.config.queue.get("event_queue_capacity", 10)
         )
-        worker_count = self.config.queue.get("max_pipeline_workers", 1)
-        self.workers = [
+
+        self.process_workers = [
             asyncio.create_task(self._event_worker(), name=f"worker_{i}")
-            for i in range(worker_count)
+            for i in range(self.config.queue.get("processor_worker_count", 1))
         ]
 
         self.command_prefix = self.config.command.get("command_prefix", "!")
@@ -119,7 +122,7 @@ class OrigamiMedia(Plugin):
         return Config
 
     @cast(Any, event.on)(EventType.ROOM_MESSAGE)
-    def main(self, event: MaubotMessageEvent) -> None:
+    async def main(self, event: MaubotMessageEvent) -> None:
         if not event.content.msgtype.is_text or event.sender == self.client.mxid:
             return
 
@@ -144,9 +147,7 @@ class OrigamiMedia(Plugin):
         if not result:
             return
 
-        item = QueueItem(
-            intent=Intent.DEFAULT, event=event, data={"valid_urls": result}
-        )
+        item = QueueItem(intent=Intent.DEFAULT, event=event, data={"result": result})
         return item
 
     def _handle_active(self, event: MaubotMessageEvent) -> Optional[QueueItem]:
@@ -198,22 +199,22 @@ class OrigamiMedia(Plugin):
         except asyncio.QueueFull:
             self.log.warning("Message queue is full. Dropping incoming message.")
 
-    async def _enqueue_item(self, item: QueueItem):
-        async with self.reaction_lock:
-            if len(self.active_reaction_tasks) >= self.config.queue.get(
-                "max_concurrent_reaction_tasks", 10
+    async def _enqueue_item(self, item: QueueItem) -> None:
+        async with self.initial_reaction_lock:
+            if len(self.initial_reaction_tasks) >= self.config.queue.get(
+                "preprocessor_worker_limit", 10
             ):
                 self.log.warning(
                     f"Skipping reaction for event {item.event.event_id}: "
-                    f"Active reactions limit reached ({len(self.active_reaction_tasks)}/"
-                    f"{self.config.queue.get('max_concurrent_reaction_tasks')}."
+                    f"Active reactions limit reached ({len(self.initial_reaction_tasks)}/"
+                    f"{self.config.queue.get('preprocessor_worker_limit')}."
                 )
                 return
 
             try:
                 hourglass_reaction_event_id = await item.event.react("⏳")
                 item.data["active_reaction_id"] = hourglass_reaction_event_id
-                self.active_reaction_tasks.add(hourglass_reaction_event_id)
+                self.initial_reaction_tasks.add(hourglass_reaction_event_id)
                 self.event_queue.put_nowait(item)
             except asyncio.QueueFull:
                 self.log.warning("Message queue is full. Dropping incoming message.")
@@ -227,8 +228,8 @@ class OrigamiMedia(Plugin):
                 reaction_id = item.data.get("active_reaction_id")
 
                 if reaction_id:
-                    async with self.reaction_lock:
-                        self.active_reaction_tasks.discard(reaction_id)
+                    async with self.initial_reaction_lock:
+                        self.initial_reaction_tasks.discard(reaction_id)
 
                     try:
                         await self.client.redact(
@@ -249,7 +250,12 @@ class OrigamiMedia(Plugin):
                     )
 
                 if item.intent == Intent.DEFAULT:
-                    valid_urls = item.data["valid_urls"]
+                    result = item.data["result"]
+                    valid_urls, sanitized_message, should_censor = result
+                    if should_censor:
+                        await self.url_handler.censor(
+                            sanitized_message=sanitized_message, event=item.event
+                        )
                     processed_media = await self.media_handler.process(
                         urls=valid_urls, event=item.event
                     )
@@ -279,35 +285,24 @@ class OrigamiMedia(Plugin):
                     f"[Worker] Failed to process event (Room: {getattr(item.event, 'room_id', 'N/A')}, "
                     f"Event: {getattr(item.event, 'event_id', 'N/A')}) - {e}"
                 )
-                try:
-                    reaction_id = item.data.get("active_reaction_id")
-                    if reaction_id:
-                        await self.client.redact(
-                            room_id=item.event.room_id,
-                            event_id=reaction_id,
-                        )
-                except Exception as redact_error:
-                    self.log.warning(
-                        f"Failed to redact after exception (Reaction ID: {reaction_id}): {redact_error}"
-                    )
-
             finally:
+                reaction_id = item.data.get("active_reaction_id")
+                if reaction_id:
+                    await self.client.redact(
+                        room_id=item.event.room_id, event_id=reaction_id
+                    )
                 self.event_queue.task_done()
-                async with self.reaction_lock:
-                    reaction_id = item.data.get("active_reaction_id")
-                    if reaction_id:
-                        self.active_reaction_tasks.discard(reaction_id)
 
     async def stop(self) -> None:
         self.log.info("Stopping OrigamiMedia workers...")
 
-        for task in self.workers:
+        for task in self.process_workers:
             task.cancel()
 
-        await asyncio.gather(*self.workers, return_exceptions=True)
+        await asyncio.gather(*self.process_workers, return_exceptions=True)
 
-        async with self.reaction_lock:
-            self.active_reaction_tasks.clear()
+        async with self.initial_reaction_lock:
+            self.initial_reaction_tasks.clear()
 
         self.log.info("All workers stopped cleanly.")
         await super().stop()
