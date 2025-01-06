@@ -128,10 +128,24 @@ class Ytdlp:
                     self.log.warning(
                         f"{name}: Process still running. Forcing termination."
                     )
-                    process.kill()
-                    await process.wait()
-                    if process.returncode is None:
-                        self.log.error(f"{name}: Process termination failed.")
+                    try:
+                        process.kill()
+                        await asyncio.wait_for(
+                            process.wait(), timeout=5
+                        )  # Timeout after 5 seconds
+                    except asyncio.TimeoutError:
+                        self.log.error(
+                            f"{name}: Process termination timed out. Skipping cleanup."
+                        )
+                    except Exception as e:
+                        self.log.exception(
+                            f"{name}: Unexpected error during process termination: {e}"
+                        )
+                    finally:
+                        if process.returncode is None:
+                            self.log.critical(
+                                f"{name}: Process is stuck and could not be terminated after multiple attempts."
+                            )
 
         raise RuntimeError("No valid yt-dlp query command succeeded.")
 
@@ -146,11 +160,13 @@ class Ytdlp:
 
             self.log.info(f"Executing yt-dlp download command: {name} → {command}")
 
+            process = None
             try:
                 process = await asyncio.create_subprocess_shell(
                     command,
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
+                    limit=1024 * 1024 * 10,
                 )
 
                 if not process.stdout:
@@ -162,7 +178,11 @@ class Ytdlp:
                 total_size = 0
                 max_file_size = self.config.file.get("max_in_memory_file_size", 0)
 
-                async for chunk in process.stdout:
+                while True:
+                    chunk = await process.stdout.read(1024 * 1024)
+                    if not chunk:
+                        break
+
                     chunk_size = len(chunk)
                     total_size += chunk_size
 
@@ -211,8 +231,20 @@ class Ytdlp:
                         f"{name}: Process still running. Forcing termination."
                     )
                     process.kill()
-                    await process.wait()
-                    if process.returncode is None:
-                        self.log.error(f"{name}: Process termination failed.")
+                    try:
+                        await asyncio.wait_for(process.wait(), timeout=5)
+                    except asyncio.TimeoutError:
+                        self.log.error(
+                            f"{name}: Process termination timed out. Moving on."
+                        )
+                    except Exception as e:
+                        self.log.exception(
+                            f"{name}: Unexpected error during process termination: {e}"
+                        )
+                    finally:
+                        if process.returncode is None:
+                            self.log.critical(
+                                f"{name}: Process is stuck and could not be terminated."
+                            )
 
         raise RuntimeError("No valid yt-dlp download command succeeded.")

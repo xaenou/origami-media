@@ -1,3 +1,4 @@
+import asyncio
 from dataclasses import dataclass
 from io import BytesIO
 from typing import TYPE_CHECKING, Any, Dict, Optional, Union
@@ -57,34 +58,67 @@ class Ffmpeg:
         return BytesIO(thumbnail_data)
 
     async def capture_livestream(self, stream_url: str) -> BytesIO:
-        input_args = [
+        self.log.info("Downloading livestream preview...")
+
+        ffmpeg_cmd = [
+            "ffmpeg",
             "-i",
             stream_url,
             "-t",
-            "90",
-        ]
-
-        output_args = [
+            "10",
             "-c",
             "copy",
-            "-c:a",
-            "aac",
             "-bsf:a",
             "aac_adtstoasc",
+            "-movflags",
+            "+frag_keyframe+empty_moov",
+            "-f",
+            "mp4",
+            "-blocksize",
+            "1024",
+            "pipe:1",
         ]
 
-        stream_data = await convert_bytes(
-            data=b"",
-            output_extension="mp4",
-            input_args=input_args,
-            output_args=output_args,
+        try:
+            process = await asyncio.create_subprocess_exec(
+                *ffmpeg_cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+
+            stdout, stderr = await process.communicate()
+
+            if process.returncode != 0:
+                error_message = stderr.decode()
+                raise RuntimeError(f"FFmpeg error: {error_message}")
+
+            print("Livestream preview successfully extracted.")
+            if not self._validate_file_size(stdout):
+                raise RuntimeError("Repaired MP4 file size is too large")
+            return BytesIO(stdout)
+
+        except Exception as e:
+            raise RuntimeError(f"Failed to capture livestream: {e}")
+
+    async def convert_fragmented_mp4_to_mp4(self, video_data: bytes) -> BytesIO:
+        self.log.info(
+            f"Converting fragmented MP4, input size: {len(video_data)} bytes."
         )
 
-        self.log.info("Livestream preview succesfully extracted.")
-        if not self._validate_file_size(stream_data):
-            raise
+        data = await convert_bytes(
+            data=video_data,
+            output_extension="mp4",
+            input_args=["-nostdin"],
+            output_args=["-f", "mp4", "-c", "copy", "-movflags", "+faststart"],
+            input_mime="video/mp4",
+            logger=self.log,
+        )
 
-        return BytesIO(stream_data)
+        self.log.info("Fragmented MP4 successfully converted.")
+        if not self._validate_file_size(data):
+            raise RuntimeError("Repaired MP4 file size is too large")
+
+        return BytesIO(data)
 
     def _parse_dimension(self, value: Any) -> int:
         try:

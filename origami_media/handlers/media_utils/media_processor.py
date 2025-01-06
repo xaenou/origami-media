@@ -105,8 +105,12 @@ class MediaProcessor:
                         "Live media detected, but livestream previews are disabled."
                     )
 
-                return await self.ffmpeg_controller.capture_livestream(
+                data = await self.ffmpeg_controller.capture_livestream(
                     stream_url=ytdlp_metadata["url"]
+                )
+                data.seek(0)
+                return await self.ffmpeg_controller.convert_fragmented_mp4_to_mp4(
+                    data.getvalue()
                 )
 
             if (duration := ytdlp_metadata.get("duration")) is not None:

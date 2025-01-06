@@ -110,7 +110,6 @@ class OrigamiMedia(Plugin):
             self.config.queue.get("event_queue_capacity", 10)
         )
 
-        self.EVENT_QUEUE_TIMEOUT = 5
         self.INTENT_EXECUTION_TIMEOUT = 180
         self.process_workers = [
             asyncio.create_task(self._event_worker(), name=f"worker_{i}")
@@ -226,9 +225,7 @@ class OrigamiMedia(Plugin):
     async def _event_worker(self) -> None:
         while True:
             try:
-                item: QueueItem = await asyncio.wait_for(
-                    self.event_queue.get(), timeout=self.EVENT_QUEUE_TIMEOUT
-                )
+                item: QueueItem = await self.event_queue.get()
 
                 reaction_id = item.data.get("active_reaction_id")
                 if reaction_id:
@@ -238,6 +235,7 @@ class OrigamiMedia(Plugin):
                     await self.client.redact(
                         room_id=item.event.room_id, event_id=reaction_id
                     )
+                item.data["active_reaction_id"] = await item.event.react("🔄")
 
                 if item.intent == Intent.DEFAULT:
                     try:
