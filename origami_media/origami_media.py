@@ -110,6 +110,8 @@ class OrigamiMedia(Plugin):
             self.config.queue.get("event_queue_capacity", 10)
         )
 
+        self.EVENT_QUEUE_TIMEOUT = 5
+        self.INTENT_EXECUTION_TIMEOUT = 180
         self.process_workers = [
             asyncio.create_task(self._event_worker(), name=f"worker_{i}")
             for i in range(self.config.queue.get("processor_worker_count", 1))
@@ -224,67 +226,53 @@ class OrigamiMedia(Plugin):
     async def _event_worker(self) -> None:
         while True:
             try:
-                item: QueueItem = await self.event_queue.get()
-                reaction_id = item.data.get("active_reaction_id")
+                item: QueueItem = await asyncio.wait_for(
+                    self.event_queue.get(), timeout=self.EVENT_QUEUE_TIMEOUT
+                )
 
+                reaction_id = item.data.get("active_reaction_id")
                 if reaction_id:
                     async with self.initial_reaction_lock:
                         self.initial_reaction_tasks.discard(reaction_id)
 
-                    try:
-                        await self.client.redact(
-                            room_id=item.event.room_id,
-                            event_id=reaction_id,
-                        )
-                    except Exception as redact_error:
-                        self.log.warning(
-                            f"Failed to redact reaction {reaction_id}: {redact_error}"
-                        )
-
-                try:
-                    loading_reaction_event_id = await item.event.react("🔄")
-                    item.data["active_reaction_id"] = loading_reaction_event_id
-                except Exception as reaction_error:
-                    self.log.warning(
-                        f"Failed to add '🔄' reaction for event {getattr(item.event, 'event_id', 'N/A')}: {reaction_error}"
+                    await self.client.redact(
+                        room_id=item.event.room_id, event_id=reaction_id
                     )
 
                 if item.intent == Intent.DEFAULT:
-                    result = item.data["result"]
-                    valid_urls, sanitized_message, should_censor = result
-                    if should_censor:
-                        await self.url_handler.censor(
-                            sanitized_message=sanitized_message, event=item.event
+                    try:
+                        await asyncio.wait_for(
+                            self._execute_default_intent(item),
+                            timeout=self.INTENT_EXECUTION_TIMEOUT,
                         )
-                    processed_media = await self.media_handler.process(
-                        urls=valid_urls, event=item.event
-                    )
-                    await self.display_handler.render(
-                        media=processed_media, event=item.event
-                    )
+                    except asyncio.TimeoutError:
+                        self.log.warning("Timeout while executing default intent.")
+                    except Exception as e:
+                        self.log.error(f"Error during default intent execution: {e}")
 
                 elif item.intent == Intent.QUERY:
-                    url = await self.command_handler.query_image_controller(
-                        query=item.data["query"],
-                        provider=item.data["provider"],
-                    )
-                    valid_urls = self.url_handler.process_string(message=url)
-                    processed_media = await self.media_handler.process(
-                        urls=valid_urls, event=item.event
-                    )
-                    await self.display_handler.render(
-                        media=processed_media, event=item.event, reply=False
-                    )
+                    try:
+                        await asyncio.wait_for(
+                            self._execute_query_intent(item),
+                            timeout=self.INTENT_EXECUTION_TIMEOUT,
+                        )
+                    except asyncio.TimeoutError:
+                        self.log.warning("Timeout while executing query intent.")
+                    except Exception as e:
+                        self.log.error(f"Error during query intent execution: {e}")
+
+            except asyncio.TimeoutError:
+                self.log.warning(
+                    "Worker timed out waiting for new event. Continuing..."
+                )
 
             except asyncio.CancelledError:
                 self.log.info("[Worker] Shutting down gracefully.")
-                break
+                raise
 
             except Exception as e:
-                self.log.error(
-                    f"[Worker] Failed to process event (Room: {getattr(item.event, 'room_id', 'N/A')}, "
-                    f"Event: {getattr(item.event, 'event_id', 'N/A')}) - {e}"
-                )
+                self.log.error(f"[Worker] Unexpected error: {e}")
+
             finally:
                 reaction_id = item.data.get("active_reaction_id")
                 if reaction_id:
@@ -292,6 +280,31 @@ class OrigamiMedia(Plugin):
                         room_id=item.event.room_id, event_id=reaction_id
                     )
                 self.event_queue.task_done()
+
+    async def _execute_default_intent(self, item: QueueItem):
+        result = item.data["result"]
+        valid_urls, sanitized_message, should_censor = result
+        if should_censor:
+            await self.url_handler.censor(
+                sanitized_message=sanitized_message, event=item.event
+            )
+        processed_media = await self.media_handler.process(
+            urls=valid_urls, event=item.event
+        )
+        await self.display_handler.render(media=processed_media, event=item.event)
+
+    async def _execute_query_intent(self, item: QueueItem):
+        url = await self.command_handler.query_image_controller(
+            query=item.data["query"],
+            provider=item.data["provider"],
+        )
+        valid_urls = self.url_handler.process_string(message=url)
+        processed_media = await self.media_handler.process(
+            urls=valid_urls, event=item.event
+        )
+        await self.display_handler.render(
+            media=processed_media, event=item.event, reply=False
+        )
 
     async def stop(self) -> None:
         self.log.info("Stopping OrigamiMedia workers...")
