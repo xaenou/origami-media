@@ -18,11 +18,11 @@ whitelist:
   - waifu.im
 
 ytdlp:
-  active_preset: "Default Preset"
+  active_preset: "Default"
   presets:
-    - name: "Default Preset"
-      format: "worst"
-      fallback_formats:
+    - name: "Default"
+      formats:
+        - "worst"
         - "bestvideo[height<=720]+bestaudio/best[height<=720]"
         - "bestvideo[height<=1080]+bestaudio/best[height<=1080]"
 
@@ -39,7 +39,7 @@ file:
   max_file_size: 104857600 # bytes
 
 queue:
-  preprocessor_worker_limit: 10
+  preprocess_worker_limit: 10
   # [Preprocess Worker]
   # Role: Dynamically instantiated asyncio tasks that handle event preprocessing.
   # Trigger: Activated when validated events arrive from the main event loop.
@@ -51,7 +51,7 @@ queue:
   # Trigger: Instantiated in the plugin start method.
   # Purpose: Prevents overload by buffering events when downstream processing lags behind event arrival.
 
-  processor_worker_count: 1
+  process_worker_count: 1
   # [Process Worker]
   # Role: Static asyncio tasks handle event processing.
   # Trigger: Instantiated in the plugin start method.

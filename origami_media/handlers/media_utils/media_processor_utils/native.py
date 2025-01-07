@@ -75,7 +75,7 @@ class Native:
 
         return False
 
-    async def client_download(self, url) -> BytesIO:
+    async def client_download(self, url) -> bytes:
         max_retries = 1
         max_file_size = self.config.file.get("max_in_memory_file_size", 0)
 
@@ -112,7 +112,7 @@ class Native:
                 self.log.info(
                     f"client_download: Streamed {total_bytes} bytes into memory."
                 )
-                return output
+                return output.getvalue()
 
             except Exception as e:
                 self.log.warning(

@@ -9,7 +9,7 @@ from .media_utils.synapse_processor import SynapseProcessor
 
 if TYPE_CHECKING:
     from aiohttp import ClientSession
-    from maubot.matrix import MaubotMatrixClient, MaubotMessageEvent
+    from maubot.matrix import MaubotMatrixClient
     from mautrix.util.logging.trace import TraceLogger
 
     from origami_media.origami_media import Config
@@ -92,15 +92,13 @@ class MediaHandler:
                 if media_part and isinstance(media_part.stream, BytesIO):
                     media_part.stream.close()
 
-    async def process(
-        self, urls: list[str], event: "MaubotMessageEvent"
-    ) -> list[ProcessedMedia]:
+    async def process(self, urls: list[str], modifier=None) -> list[ProcessedMedia]:
         processed_media_array: list[ProcessedMedia] = []
 
         for url in urls:
             try:
                 media_object: Optional["Media"] = (
-                    await self.media_processor.process_url(url)
+                    await self.media_processor.process_url(url=url, modifier=modifier)
                 )
                 if not media_object:
                     self.log.warning(

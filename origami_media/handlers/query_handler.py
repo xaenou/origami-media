@@ -9,7 +9,7 @@ if TYPE_CHECKING:
     from origami_media.origami_media import Config
 
 
-class CommandHandler:
+class QueryHandler:
 
     def __init__(self, config: "Config", log: "TraceLogger", http: "ClientSession"):
         self.config = config

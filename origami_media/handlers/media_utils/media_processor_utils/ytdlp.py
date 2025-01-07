@@ -19,58 +19,47 @@ class Ytdlp:
         if command_type not in ("query", "download"):
             raise ValueError("command_type must be 'query' or 'download'")
 
-        commands = self.config.ytdlp.get("presets", [])
-        if not commands:
+        active_preset = self.config.ytdlp.get("active_preset")
+
+        if not active_preset:
+            raise ValueError("No active preset configured.")
+
+        presets = self.config.ytdlp.get("presets", [])
+        if not presets:
             raise ValueError("No commands configured.")
+
+        active_formats = next(
+            (p["formats"] for p in presets if p["name"] == active_preset), None
+        )
+        if not active_formats:
+            raise ValueError(f"No formats found for preset '{active_preset}'.")
 
         result_commands = []
         escaped_url = shlex.quote(url)
         query_flags = "-s -j"
         output_arg = "-"
 
-        for command_entry in commands:
-            name = command_entry.get("name", "Unnamed Command")
-            base_format = command_entry.get("format")
-
-            if not base_format:
+        for format_entry in active_formats:
+            if not format_entry:
                 self.log.warning(
-                    f"MediaProcessor.create_ytdlp_commands: Format missing in command {name}"
+                    f"MediaProcessor.create_ytdlp_commands: Format missing in command {active_preset}"
                 )
                 continue
 
             if command_type == "query":
                 result_commands.append(
                     {
-                        "name": name,
-                        "command": f"yt-dlp -q --no-warnings {query_flags} -f '{base_format}' {escaped_url}",
+                        "name": active_preset,
+                        "command": f"yt-dlp -q --no-warnings {query_flags} -f '{format_entry}' {escaped_url}",
                     }
                 )
             else:
                 result_commands.append(
                     {
-                        "name": name,
-                        "command": f"yt-dlp -q --no-warnings -f '{base_format}' -o '{output_arg}' {escaped_url}",
+                        "name": active_preset,
+                        "command": f"yt-dlp -q --no-warnings -f '{format_entry}' -o '{output_arg}' {escaped_url}",
                     }
                 )
-
-            for idx, fallback_format in enumerate(
-                command_entry.get("fallback_formats", [])
-            ):
-                fallback_name = f"{name} (Fallback {idx + 1})"
-                if command_type == "query":
-                    result_commands.append(
-                        {
-                            "name": fallback_name,
-                            "command": f"yt-dlp -q --no-warnings {query_flags} -f '{fallback_format}' {escaped_url}",
-                        }
-                    )
-                else:
-                    result_commands.append(
-                        {
-                            "name": fallback_name,
-                            "command": f"yt-dlp -q --no-warnings -f '{fallback_format}' -o '{output_arg}' {escaped_url}",
-                        }
-                    )
 
         return result_commands
 
@@ -130,9 +119,7 @@ class Ytdlp:
                     )
                     try:
                         process.kill()
-                        await asyncio.wait_for(
-                            process.wait(), timeout=5
-                        )  # Timeout after 5 seconds
+                        await asyncio.wait_for(process.wait(), timeout=5)
                     except asyncio.TimeoutError:
                         self.log.error(
                             f"{name}: Process termination timed out. Skipping cleanup."
@@ -149,7 +136,7 @@ class Ytdlp:
 
         raise RuntimeError("No valid yt-dlp query command succeeded.")
 
-    async def ytdlp_execute_download(self, commands: List[dict]) -> BytesIO:
+    async def ytdlp_execute_download(self, commands: List[dict]) -> bytes:
         for command_entry in commands:
             name = command_entry.get("name", "Unnamed Command")
             command = command_entry.get("command")
@@ -219,7 +206,7 @@ class Ytdlp:
                 self.log.info(
                     f"Final BytesIO size: {video_data.getbuffer().nbytes} bytes"
                 )
-                return video_data
+                return video_data.getvalue()
 
             except Exception as e:
                 self.log.exception(f"{name}: An unexpected error occurred: {e}")

@@ -8,6 +8,8 @@ from io import BytesIO
 from typing import TYPE_CHECKING, Dict, Literal, Optional
 from urllib.parse import urlparse
 
+from mautrix.util.magic import mimetype
+
 from .media_processor_utils.ffmpeg import Ffmpeg
 from .media_processor_utils.native import Native
 from .media_processor_utils.ytdlp import Ytdlp
@@ -23,9 +25,10 @@ if TYPE_CHECKING:
 @dataclass
 class MediaInfo:
     url: str
-    media_type: Literal["audio", "video", "image", "unknown"]
+    media_type: str
     origin: Literal["simple", "advanced", "thumbnail"]
     id: str
+    mimetype: str
     thumbnail_url: Optional[str] = None
     title: Optional[str] = None
     uploader: Optional[str] = None
@@ -66,14 +69,14 @@ class MediaProcessor:
             log=self.log, config=self.config, http=self.http
         )
 
-    async def _analyze_file_metadata(self, data: BytesIO) -> Optional[FfmpegMetadata]:
+    async def _analyze_file_metadata(self, data: bytes) -> Optional[FfmpegMetadata]:
         try:
-            return await self.ffmpeg_controller.extract_metadata(data.getvalue())
+            return await self.ffmpeg_controller.extract_metadata(data)
         except Exception as e:
             self.log.warning(f"Failed to extract metadata: {e}")
             return None
 
-    async def _download_simple_media(self, url: str) -> Optional[BytesIO]:
+    async def _download_simple_media(self, url: str) -> Optional[bytes]:
         try:
             return await self.native_controller.client_download(url)
         except Exception as e:
@@ -97,7 +100,9 @@ class MediaProcessor:
             self._handle_download_error(error_message)
             return None
 
-    async def _download_advanced_media(self, ytdlp_metadata: dict) -> Optional[BytesIO]:
+    async def _download_advanced_media(
+        self, ytdlp_metadata: dict, modifier=None
+    ) -> Optional[bytes]:
         try:
             if ytdlp_metadata.get("is_live", False):
                 if not self.config.ffmpeg.get("enable_livestream_previews", False):
@@ -108,38 +113,31 @@ class MediaProcessor:
                 data = await self.ffmpeg_controller.capture_livestream(
                     stream_url=ytdlp_metadata["url"]
                 )
-                data.seek(0)
-                return await self.ffmpeg_controller.convert_fragmented_mp4_to_mp4(
-                    data.getvalue()
-                )
+                data = await self.ffmpeg_controller.convert_fragmented_mp4_to_mp4(data)
 
-            if (duration := ytdlp_metadata.get("duration")) is not None:
-                if duration > self.config.file.get("max_duration", 0):
-                    raise RuntimeError(
-                        "Media length exceeds the configured duration limit."
+            else:
+
+                if (duration := ytdlp_metadata.get("duration")) is not None:
+                    if duration > self.config.file.get("max_duration", 0):
+                        raise RuntimeError(
+                            "Media length exceeds the configured duration limit."
+                        )
+
+                data = await self.ytdlp_controller.ytdlp_execute_download(
+                    commands=self.ytdlp_controller.create_ytdlp_commands(
+                        ytdlp_metadata["url"], command_type="download"
                     )
-
-            return await self.ytdlp_controller.ytdlp_execute_download(
-                commands=self.ytdlp_controller.create_ytdlp_commands(
-                    ytdlp_metadata["url"], command_type="download"
                 )
-            )
+
+            if modifier is not None and modifier == "force_audio_only":
+                data = await self.ffmpeg_controller.convert_to_mp3(video_data=data)
+
+            return data
 
         except Exception as e:
-            error_message = f"Failed to download media: {e}"
+            error_message = f"Failed to handle media: {e}"
             self._handle_download_error(error_message)
             return None
-
-    def _get_media_type(
-        self, metadata: FfmpegMetadata
-    ) -> Literal["video", "audio", "image", "unknown"]:
-        if metadata.has_video:
-            return "video"
-        if metadata.has_audio:
-            return "audio"
-        if metadata.is_image:
-            return "image"
-        return "unknown"
 
     def _generate_filename(
         self,
@@ -171,21 +169,10 @@ class MediaProcessor:
 
         return filename
 
-    def _sanitize_file_format(self, format: str):
-        format_map = {
-            "image2": "png",
-            "video": "mp4",
-            "audio": "mp3",
-            "application": "bin",
-            "vp9": "webm",
-            "h264": "mp4",
-            "png_pipe": "png",
-            "unknown_video": "png",
-        }
-        new_format = format_map.get(format, format)
-        if new_format != format:
-            self.log.info(f"Format mapped from {format} to {new_format}")
-        return new_format
+    def _get_mimetype(self, bytes) -> tuple[str, str, str]:
+        mime = mimetype(bytes)
+        type_, subtype = mime.split("/", 1)
+        return mime, subtype, type_
 
     def _generate_media_filename(self, metadata: dict, extension: str) -> str:
         filename = self._generate_filename(metadata)
@@ -195,57 +182,73 @@ class MediaProcessor:
         self.log.warning(message)
 
     def _create_media_object(
-        self, stream: BytesIO, other_metadata: dict, file_metadata: FfmpegMetadata
+        self, stream: bytes, other_metadata: dict, file_metadata: FfmpegMetadata
     ) -> MediaFile:
-        media_type = self._get_media_type(file_metadata)
-        return MediaFile(
-            filename=self._generate_media_filename(
-                other_metadata, other_metadata.get("ext", "mp4")
-            ),
-            stream=stream,
+        mimetype, ext, type_ = self._get_mimetype(stream)
+
+        if other_metadata["origin"] == "thumbnail":
+            mimetype = "image/jpeg"
+            ext = "jpeg"
+            type_ = "image"
+            self.log.info("in thumbnail mimes changed")
+
+        if type_ == "audio":
+            mimetype = "audio/mp3"
+            ext = "mp3"
+
+        mediafile = MediaFile(
+            filename=self._generate_media_filename(other_metadata, extension=ext),
+            stream=BytesIO(stream),
             metadata=MediaInfo(
                 url=other_metadata["url"],
                 id=other_metadata["id"],
                 origin=other_metadata["origin"],
                 title=other_metadata.get("title", "unknown_title"),
                 uploader=other_metadata.get("uploader", "unknown_uploader"),
-                ext=other_metadata.get("ext", "mp4"),
                 extractor=other_metadata.get("extractor"),
+                ext=ext,
+                mimetype=mimetype,
                 duration=file_metadata.duration,
                 width=file_metadata.width,
                 height=file_metadata.height,
-                size=file_metadata.size,
-                media_type=media_type,
+                size=len(stream),
+                media_type=type_,
                 thumbnail_url=other_metadata.get("thumbnail"),
             ),
         )
+        self.log.info(
+            mediafile.metadata.ext,
+            mediafile.metadata.origin,
+            mediafile.metadata.mimetype,
+        )
+        return mediafile
 
     async def _process_simple_media(
-        self, data: BytesIO, url: str, ffmpeg_metadata: FfmpegMetadata
+        self, data: bytes, url: str, ffmpeg_metadata: FfmpegMetadata
     ) -> Optional[MediaFile]:
         url_uuid = uuid.uuid5(uuid.NAMESPACE_URL, url)
+
         metadata = {
             "id": str(url_uuid),
             "extractor": urlparse(url).netloc.split(":")[0],
             "uploader": "unknown_uploader",
             "title": "unknown_title",
             "url": url,
-            "ext": self._sanitize_file_format(ffmpeg_metadata.format),
             "origin": "simple",
         }
 
         return self._create_media_object(data, metadata, ffmpeg_metadata)
 
     async def _process_advanced_media(
-        self, data: BytesIO, ytdlp_metadata: Dict, ffmpeg_metadata: FfmpegMetadata
+        self, data: bytes, ytdlp_metadata: Dict, ffmpeg_metadata: FfmpegMetadata
     ) -> Optional[MediaFile]:
+
         mutated_ytdlp_metadata = {
             "id": ytdlp_metadata.get("id"),
             "extractor": ytdlp_metadata.get("extractor"),
             "uploader": ytdlp_metadata.get("uploader", "unknown_uploader"),
             "title": ytdlp_metadata.get("title", "unknown_title"),
             "url": ytdlp_metadata["url"],
-            "ext": ytdlp_metadata.get("ext", "mp4"),
             "origin": "advanced",
             "thumbnail": ytdlp_metadata.get("thumbnail"),
         }
@@ -255,22 +258,25 @@ class MediaProcessor:
         )
 
     async def _process_thumbnail_media(
-        self, data: BytesIO, url: str, ffmpeg_metadata: FfmpegMetadata
+        self, data: bytes, url: str, ffmpeg_metadata: FfmpegMetadata
     ) -> Optional[MediaFile]:
         url_uuid = uuid.uuid5(uuid.NAMESPACE_URL, url)
+        self.log.info("in thumbnail process")
+
         metadata = {
             "id": str(url_uuid),
             "extractor": urlparse(url).netloc.split(":")[0],
             "uploader": "unknown_uploader",
             "title": "unknown_title",
             "url": url,
-            "ext": self._sanitize_file_format(ffmpeg_metadata.format),
             "origin": "thumbnail",
         }
 
         return self._create_media_object(data, metadata, ffmpeg_metadata)
 
-    async def _primary_media_controller(self, url: str) -> Optional[MediaFile]:
+    async def _primary_media_controller(
+        self, url: str, modifier=None
+    ) -> Optional[MediaFile]:
         skip_simple = {
             "odysee",
             "youtube",
@@ -285,8 +291,7 @@ class MediaProcessor:
             f"entering primary media controller, should skip simple download: {should_skip}"
         )
 
-        if not should_skip:
-            # try a simple flow without yt-dlp
+        if not should_skip and (modifier is None or modifier != "force_audio_only"):
             simple_data = await self._download_simple_media(url)
             if simple_data:
                 simple_metadata = await self._analyze_file_metadata(simple_data)
@@ -299,7 +304,7 @@ class MediaProcessor:
         ytdlp_metadata = await self._query_advanced_media(url)
         if ytdlp_metadata:
             advanced_data = await self._download_advanced_media(
-                ytdlp_metadata=ytdlp_metadata
+                ytdlp_metadata=ytdlp_metadata, modifier=modifier
             )
             if advanced_data:
                 advanced_metadata = await self._analyze_file_metadata(advanced_data)
@@ -313,7 +318,7 @@ class MediaProcessor:
         return None
 
     async def _thumbnail_media_controller(
-        self, primary_media_object: MediaFile
+        self, primary_media_object: MediaFile, modifier=None
     ) -> Optional[MediaFile]:
         if (
             primary_media_object.metadata.origin == "advanced"
@@ -331,6 +336,8 @@ class MediaProcessor:
                         url=primary_media_object.metadata.url,
                     )
 
+        if modifier is not None and modifier == "force_audio_only":
+            return
         elif (
             primary_media_object.metadata.media_type == "video"
             and self.config.ffmpeg["enable_thumbnail_generation"]
@@ -351,15 +358,17 @@ class MediaProcessor:
 
         return None
 
-    async def process_url(self, url: str) -> Optional[Media]:
+    async def process_url(self, url: str, modifier=None) -> Optional[Media]:
 
-        primary_file_object = await self._primary_media_controller(url)
+        primary_file_object = await self._primary_media_controller(
+            url, modifier=modifier
+        )
         if not primary_file_object:
             self.log.warning("Failed to process primary media.")
             return None
 
         thumbnail_file_object = await self._thumbnail_media_controller(
-            primary_file_object
+            primary_file_object, modifier=modifier
         )
         if not thumbnail_file_object:
             self.log.warning("Thumbnail was not obtained.")

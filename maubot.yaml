@@ -1,5 +1,5 @@
 id: net.origami.media
-version: 2.7.8
+version: 2.9.1
 modules:
   - origami_media
 main_class: OrigamiMedia
