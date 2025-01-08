@@ -18,6 +18,7 @@ from .handlers.url_handler import UrlHandler
 class Branch(Enum):
     URL = auto()
     QUERY = auto()
+    PRINT = auto()
 
 
 class QueueItem:
@@ -120,6 +121,53 @@ class OrigamiMedia(Plugin):
     def get_config_class(cls) -> Type[BaseProxyConfig]:
         return Config
 
+    BASE_COMMANDS = {
+        "help": {
+            "type": "print",
+            "content": "_help_message",
+            "description": "Show this help message.",
+        },
+        "get": {
+            "type": "url",
+            "modifier": None,
+            "description": "Download media from a url.",
+        },
+        "audio": {
+            "type": "url",
+            "modifier": "force_audio_only",
+            "description": "Download audio only for a url.",
+        },
+        "tenor": {
+            "type": "query",
+            "api_provider": "tenor",
+            "description": "Download gif by querying tenor.",
+        },
+        "unsplash": {
+            "type": "query",
+            "api_provider": "unsplash",
+            "description": "Download image by querying unsplash.",
+        },
+        "lexica": {
+            "type": "query",
+            "api_provider": "lexica",
+            "description": "Download an image by querying Lexica.",
+        },
+        "waifu": {
+            "type": "query",
+            "api_provider": "waifu",
+            "description": "Roll for a random Waifu.",
+        },
+    }
+
+    ALIASES = {
+        "gif": "tenor",
+        "img": "unsplash",
+        "lex": "lexica",
+        "girl": "waifu",
+        "g": "waifu",
+        "mp3": "audio",
+    }
+
     @cast(Any, event.on)(EventType.ROOM_MESSAGE)
     async def main(self, event: MaubotMessageEvent) -> None:
         if not event.content.msgtype.is_text or event.sender == self.client.mxid:
@@ -171,49 +219,58 @@ class OrigamiMedia(Plugin):
         command = parts[0]
         argument = parts[1] if len(parts) > 1 else ""
 
-        url_commands = {
-            f"{self.command_prefix}get": None,
-            f"{self.command_prefix}audio": "force_audio_only",
+        command_map = {
+            f"{self.command_prefix}{cmd}": details
+            for cmd, details in self.BASE_COMMANDS.items()
         }
+        command_map.update(
+            {
+                f"{self.command_prefix}{alias}": command_map[
+                    f"{self.command_prefix}{target}"
+                ]
+                for alias, target in self.ALIASES.items()
+            }
+        )
 
-        query_commands = {
-            f"{self.command_prefix}tenor": "tenor",
-            f"{self.command_prefix}gif": "tenor",
-            f"{self.command_prefix}tr": "tenor",
-            f"{self.command_prefix}unsplash": "unsplash",
-            f"{self.command_prefix}img": "unsplash",
-            f"{self.command_prefix}uh": "unsplash",
-            f"{self.command_prefix}lexica": "lexica",
-            f"{self.command_prefix}lex": "lexica",
-            f"{self.command_prefix}la": "lexica",
-            f"{self.command_prefix}girl": "waifu",
-            f"{self.command_prefix}g": "waifu",
-        }
         try:
-            if command in url_commands:
-                url_tuple = self.url_handler.process(event)
-                if not url_tuple:
-                    return
+            if command in command_map:
+                command_info = command_map[command]
 
-                item = QueueItem(branch=Branch.URL, event=event, data={}, args={})
-                item.data["url_tuple"] = url_tuple
-                item.args["media_modifier"] = url_commands[command]
+                if command_info["type"] == "url":
+                    url_tuple = self.url_handler.process(event)
+                    if not url_tuple:
+                        return
 
-                return item
+                    item = QueueItem(branch=Branch.URL, event=event, data={}, args={})
+                    item.data["url_tuple"] = url_tuple
+                    item.args["media_modifier"] = command_info["modifier"]
+                    return item
 
-            elif command in query_commands:
-                api_provider = query_commands[command]
+                elif command_info["type"] == "query":
+                    item = QueueItem(branch=Branch.QUERY, event=event, data={}, args={})
+                    item.args["query"] = argument
+                    item.args["api_provider"] = command_info["api_provider"]
+                    return item
 
-                item = QueueItem(branch=Branch.QUERY, event=event, data={}, args={})
-                item.args["query"] = argument
-                item.args["api_provider"] = api_provider
+                elif command_info["type"] == "print":
+                    content_function = getattr(self, command_info["content"], None)
+                    if callable(content_function):
+                        content = content_function()
+                    else:
+                        content = str(command_info["content"])
 
-                return item
+                    item = QueueItem(branch=Branch.PRINT, event=event, data={}, args={})
+                    item.data["content"] = content
+                    return item
 
         except asyncio.QueueFull:
             self.log.warning("Message queue is full. Dropping incoming message.")
 
     async def _preprocess_worker(self, item: QueueItem) -> None:
+        if item.branch == Branch.PRINT:
+            await item.event.respond(item.data["content"])
+            return
+
         async with self.initial_reaction_lock:
             if len(self.initial_reaction_tasks) >= self.config.queue.get(
                 "preprocess_worker_limit", 10
@@ -333,3 +390,24 @@ class OrigamiMedia(Plugin):
 
         self.log.info("All workers stopped cleanly.")
         await super().stop()
+
+    def _help_message(self) -> str:
+        help_message = "**Available Commands:**\n"
+        for cmd, details in self.BASE_COMMANDS.items():
+            description = details.get("description", f"{cmd.capitalize()} command.")
+            aliases = [alias for alias, target in self.ALIASES.items() if target == cmd]
+            alias_text = f" (Aliases: {', '.join(aliases)})" if aliases else ""
+            cmd_type = details.get("type")
+
+            if cmd == "waifu":
+                arg_text = ""
+            elif cmd_type == "query":
+                arg_text = "[query]"
+            elif cmd_type == "url":
+                arg_text = "[url]"
+            else:
+                arg_text = ""
+
+            help_message += f"- `{self.command_prefix}{cmd} {arg_text}`: {description}{alias_text}\n"
+
+        return help_message
