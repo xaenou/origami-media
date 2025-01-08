@@ -39,6 +39,12 @@ class Ytdlp:
         query_flags = "-s -j"
         output_arg = "-"
 
+        proxy = ""
+        if self.config.ytdlp.get("proxy_enabled", False):
+            proxy_config = self.config.ytdlp.get("proxy")
+            if proxy_config:
+                proxy = f"--proxy {shlex.quote(proxy_config)}"
+
         for format_entry in active_formats:
             if not format_entry:
                 self.log.warning(
@@ -50,14 +56,14 @@ class Ytdlp:
                 result_commands.append(
                     {
                         "name": active_preset,
-                        "command": f"yt-dlp -q --no-warnings {query_flags} -f '{format_entry}' {escaped_url}",
+                        "command": f"yt-dlp -q --no-warnings {query_flags} {proxy} -f '{format_entry}' {escaped_url}",
                     }
                 )
             else:
                 result_commands.append(
                     {
                         "name": active_preset,
-                        "command": f"yt-dlp -q --no-warnings -f '{format_entry}' -o '{output_arg}' {escaped_url}",
+                        "command": f"yt-dlp -q --no-warnings {proxy} -f '{format_entry}' -o '{output_arg}' {escaped_url}",
                     }
                 )
 

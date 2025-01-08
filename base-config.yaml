@@ -18,6 +18,8 @@ whitelist:
   - waifu.im
 
 ytdlp:
+  proxy_enabled: false
+  proxy: #
   active_preset: "Default"
   presets:
     - name: "Default"
@@ -27,11 +29,9 @@ ytdlp:
         - "bestvideo[height<=1080]+bestaudio/best[height<=1080]"
 
 ffmpeg:
-  enable_livestream_previews: True
-  livestream_preview_length: 10 # seconds
-  livestream_args: false # not yet implemented
+  enable_livestream_previews: true
+  livestream_preview_length: 15 # seconds
   enable_thumbnail_generation: true
-  thumbnail_args: false # not yet implemented
 
 file:
   max_duration: 1200 # seconds
@@ -57,7 +57,8 @@ queue:
   # Trigger: Instantiated in the plugin start method.
   # Purpose: Continuously dequeues, processes, and renders media.
 
-  max_message_url_count: 1 # If a message has >= this amount of urls it is not processed.
+  max_message_url_count: 1
+  # If a message has >= this amount of urls it is not processed.
 
 log: # wip
   debug: true
@@ -68,5 +69,5 @@ log: # wip
 command:
   command_prefix: "!"
   query_image:
-    tenor_api_key:
-    unsplash_api_key:
+    tenor_api_key: #
+    unsplash_api_key: #

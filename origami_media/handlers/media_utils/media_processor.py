@@ -5,7 +5,7 @@ import unicodedata
 import uuid
 from dataclasses import dataclass
 from io import BytesIO
-from typing import TYPE_CHECKING, Dict, Literal, Optional
+from typing import TYPE_CHECKING, Dict, Literal, Optional, Tuple
 from urllib.parse import urlparse
 
 from mautrix.util.magic import mimetype
@@ -69,11 +69,26 @@ class MediaProcessor:
             log=self.log, config=self.config, http=self.http
         )
 
-    async def _analyze_file_metadata(self, data: bytes) -> Optional[FfmpegMetadata]:
+    async def _post_process(
+        self, data: bytes, modifier=None
+    ) -> Optional[Tuple[bytes, FfmpegMetadata]]:
         try:
-            return await self.ffmpeg_controller.extract_metadata(data)
+            _, _, type_ = self._get_mimetype(data)
+
+            if type_ == "video":
+                if modifier == "force_audio_only":
+                    data = await self.ffmpeg_controller.normalize_audio(data)
+                else:
+                    data = await self.ffmpeg_controller.normalize_video(data)
+            elif type_ == "audio":
+                data = await self.ffmpeg_controller.normalize_audio(data)
+
+            processed_data = data
+            metadata = await self.ffmpeg_controller.extract_metadata(data)
+
+            return processed_data, metadata
         except Exception as e:
-            self.log.warning(f"Failed to extract metadata: {e}")
+            self.log.warning(f"Error: {e}")
             return None
 
     async def _download_simple_media(self, url: str) -> Optional[bytes]:
@@ -100,9 +115,7 @@ class MediaProcessor:
             self._handle_download_error(error_message)
             return None
 
-    async def _download_advanced_media(
-        self, ytdlp_metadata: dict, modifier=None
-    ) -> Optional[bytes]:
+    async def _download_advanced_media(self, ytdlp_metadata: dict) -> Optional[bytes]:
         try:
             if ytdlp_metadata.get("is_live", False):
                 if not self.config.ffmpeg.get("enable_livestream_previews", False):
@@ -113,7 +126,6 @@ class MediaProcessor:
                 data = await self.ffmpeg_controller.capture_livestream(
                     stream_url=ytdlp_metadata["url"]
                 )
-                data = await self.ffmpeg_controller.convert_fragmented_mp4_to_mp4(data)
 
             else:
 
@@ -129,9 +141,6 @@ class MediaProcessor:
                     )
                 )
 
-            if modifier is not None and modifier == "force_audio_only":
-                data = await self.ffmpeg_controller.convert_to_mp3(video_data=data)
-
             return data
 
         except Exception as e:
@@ -139,10 +148,7 @@ class MediaProcessor:
             self._handle_download_error(error_message)
             return None
 
-    def _generate_filename(
-        self,
-        metadata: dict,
-    ) -> str:
+    def _generate_filename(self, metadata: dict) -> str:
         filename = "{title}-{uploader}-{extractor}-{id}".format(
             title=metadata.get("title", "unknown_title"),
             uploader=metadata.get("uploader", "unknown_uploader"),
@@ -190,13 +196,12 @@ class MediaProcessor:
             mimetype = "image/jpeg"
             ext = "jpeg"
             type_ = "image"
-            self.log.info("in thumbnail mimes changed")
 
         if type_ == "audio":
             mimetype = "audio/mp3"
             ext = "mp3"
 
-        mediafile = MediaFile(
+        return MediaFile(
             filename=self._generate_media_filename(other_metadata, extension=ext),
             stream=BytesIO(stream),
             metadata=MediaInfo(
@@ -216,12 +221,6 @@ class MediaProcessor:
                 thumbnail_url=other_metadata.get("thumbnail"),
             ),
         )
-        self.log.info(
-            mediafile.metadata.ext,
-            mediafile.metadata.origin,
-            mediafile.metadata.mimetype,
-        )
-        return mediafile
 
     async def _process_simple_media(
         self, data: bytes, url: str, ffmpeg_metadata: FfmpegMetadata
@@ -291,27 +290,26 @@ class MediaProcessor:
             f"entering primary media controller, should skip simple download: {should_skip}"
         )
 
-        if not should_skip and (modifier is None or modifier != "force_audio_only"):
-            simple_data = await self._download_simple_media(url)
-            if simple_data:
-                simple_metadata = await self._analyze_file_metadata(simple_data)
-                if simple_metadata:
+        if not should_skip:
+            data = await self._download_simple_media(url)
+            if data:
+                result = await self._post_process(data, modifier=modifier)
+                if result:
+                    data, metadata = result
                     return await self._process_simple_media(
-                        simple_data, ffmpeg_metadata=simple_metadata, url=url
+                        data, ffmpeg_metadata=metadata, url=url
                     )
 
-        # try an advanced flow with yt-dlp
         ytdlp_metadata = await self._query_advanced_media(url)
         if ytdlp_metadata:
-            advanced_data = await self._download_advanced_media(
-                ytdlp_metadata=ytdlp_metadata, modifier=modifier
-            )
-            if advanced_data:
-                advanced_metadata = await self._analyze_file_metadata(advanced_data)
-                if advanced_metadata:
+            data = await self._download_advanced_media(ytdlp_metadata=ytdlp_metadata)
+            if data:
+                result = await self._post_process(data, modifier=modifier)
+                if result:
+                    data, metadata = result
                     return await self._process_advanced_media(
-                        advanced_data,
-                        ffmpeg_metadata=advanced_metadata,
+                        data,
+                        ffmpeg_metadata=metadata,
                         ytdlp_metadata=ytdlp_metadata,
                     )
 
@@ -328,8 +326,9 @@ class MediaProcessor:
                 primary_media_object.metadata.thumbnail_url
             )
             if data:
-                metadata = await self._analyze_file_metadata(data)
-                if metadata:
+                result = await self._post_process(data)
+                if result:
+                    _, metadata = result
                     return await self._process_thumbnail_media(
                         data,
                         ffmpeg_metadata=metadata,
@@ -338,6 +337,7 @@ class MediaProcessor:
 
         if modifier is not None and modifier == "force_audio_only":
             return
+
         elif (
             primary_media_object.metadata.media_type == "video"
             and self.config.ffmpeg["enable_thumbnail_generation"]
@@ -348,8 +348,9 @@ class MediaProcessor:
                 format=primary_media_object.metadata.ext or "mp4",
             )
             if data:
-                metadata = await self._analyze_file_metadata(data)
-                if metadata:
+                result = await self._post_process(data)
+                if result:
+                    _, metadata = result
                     return await self._process_thumbnail_media(
                         data,
                         ffmpeg_metadata=metadata,

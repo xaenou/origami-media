@@ -115,29 +115,42 @@ class Ffmpeg:
 
         return data
 
-    async def convert_to_m4a(self, video_data: bytes) -> bytes:
-        self.log.info(f"Converting video to M4A, input size: {len(video_data)} bytes.")
+    async def normalize_video(self, video_data: bytes) -> bytes:
+        self.log.info(f"Converting video to MP4, input size: {len(video_data)} bytes.")
 
-        data = await convert_bytes(
+        processed_data = await convert_bytes(
             data=video_data,
-            output_extension="m4a",
+            output_extension="mp4",
             input_args=["-nostdin"],
-            output_args=["-f", "mp4", "-c:a", "libfdk_aac", "-b:a", "192k"],
+            output_args=[
+                "-f",
+                "mp4",
+                "-c:v",
+                "libx264",
+                "-preset",
+                "fast",
+                "-c:a",
+                "aac",
+                "-b:a",
+                "192k",
+                "-movflags",
+                "+faststart",
+            ],
             logger=self.log,
         )
 
-        self.log.info("Successfully converted to M4A.")
+        self.log.info("Video successfully converted to MP4 with audio normalization.")
 
-        if not self._validate_file_size(data):
-            raise RuntimeError("Converted M4A file size is too large")
+        if not self._validate_file_size(processed_data):
+            raise RuntimeError("Converted MP4 file size is too large")
 
-        return data
+        return processed_data
 
-    async def convert_to_mp3(self, video_data: bytes) -> bytes:
-        self.log.info(f"Converting video to MP3, input size: {len(video_data)} bytes.")
+    async def normalize_audio(self, data: bytes) -> bytes:
+        self.log.info(f"Converting to MP3, input size: {len(data)} bytes.")
 
-        data = await convert_bytes(
-            data=video_data,
+        processed_data = await convert_bytes(
+            data=data,
             output_extension="mp3",
             input_args=["-nostdin"],
             output_args=["-f", "mp3", "-c:a", "libmp3lame", "-b:a", "192k"],
@@ -146,10 +159,28 @@ class Ffmpeg:
 
         self.log.info("Successfully converted to MP3.")
 
-        if not self._validate_file_size(data):
+        if not self._validate_file_size(processed_data):
             raise RuntimeError("Converted MP3 file size is too large")
 
-        return data
+        return processed_data
+
+    async def normalize_image(self, image_data: bytes) -> bytes:
+        self.log.info(f"Converting image to PNG, input size: {len(image_data)} bytes.")
+
+        processed_data = await convert_bytes(
+            data=image_data,
+            output_extension="png",
+            input_args=["-nostdin"],
+            output_args=[],
+            logger=self.log,
+        )
+
+        self.log.info("Image successfully converted to PNG.")
+
+        if not self._validate_file_size(processed_data):
+            raise RuntimeError("Converted PNG file size is too large")
+
+        return processed_data
 
     def _parse_dimension(self, value: Any) -> int:
         try:

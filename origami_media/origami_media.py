@@ -359,6 +359,12 @@ class OrigamiMedia(Plugin):
             urls=valid_urls, modifier=item.args["media_modifier"]
         )
 
+        if item.reaction_id:
+            await self.client.redact(
+                room_id=item.event.room_id, event_id=item.reaction_id
+            )
+            item.reaction_id = None
+
         await self.display_handler.render(media=processed_media, event=item.event)
 
     async def _execute_query_branch(self, item: QueueItem):
@@ -372,6 +378,12 @@ class OrigamiMedia(Plugin):
         processed_media = await self.media_handler.process(
             urls=valid_urls,
         )
+
+        if item.reaction_id:
+            await self.client.redact(
+                room_id=item.event.room_id, event_id=item.reaction_id
+            )
+            item.reaction_id = None
 
         await self.display_handler.render(
             media=processed_media, event=item.event, reply=False
