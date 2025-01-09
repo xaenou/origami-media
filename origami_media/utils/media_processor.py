@@ -43,10 +43,11 @@ class MediaProcessor:
             if type_ == "video":
                 if modifier == "force_audio_only":
                     data = await self.ffmpeg_controller.normalize_audio(data)
-                else:
+                elif self.config.file.get("enable_normalize_videos_to_mp4"):
                     data = await self.ffmpeg_controller.normalize_video(data)
             elif type_ == "audio":
-                data = await self.ffmpeg_controller.normalize_audio(data)
+                if self.config.file.get("enable_normalize_audio_to_mp3"):
+                    data = await self.ffmpeg_controller.normalize_audio(data)
 
             processed_data = data
             metadata = await self.ffmpeg_controller.extract_metadata(data)

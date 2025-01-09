@@ -37,6 +37,8 @@ file:
   max_duration: 1200 # seconds
   max_in_memory_file_size: 104857600 # bytes
   max_file_size: 104857600 # bytes
+  enable_normalize_videos_to_mp4: true
+  enable_normalize_audio_to_mp3: true
 
 queue:
   preprocess_worker_limit: 10
