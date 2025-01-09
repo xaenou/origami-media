@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import asyncio
+import random
+import subprocess
+import time
 from typing import TYPE_CHECKING
 
 from origami_media.dispatchers.event_processor import CommandPacket
@@ -34,31 +38,31 @@ class RouteExecutor:
         self.query_handler = query_handler
         self.url_handler = url_handler
 
-    async def execute_url_route(self, item: CommandPacket) -> None:
-        url_tuple = item.data["url_tuple"]
+    async def execute_url_route(self, packet: CommandPacket) -> None:
+        url_tuple = packet.data["url_tuple"]
         valid_urls, sanitized_message, should_censor = url_tuple
 
         if should_censor:
             await self.url_handler.censor(
-                sanitized_message=sanitized_message, event=item.event
+                sanitized_message=sanitized_message, event=packet.event
             )
 
         processed_media = await self.media_handler.process(
-            urls=valid_urls, modifier=item.args["media_modifier"]
+            urls=valid_urls, modifier=packet.args["media_modifier"]
         )
 
-        if item.reaction_id:
+        if packet.reaction_id:
             await self.client.redact(
-                room_id=item.event.room_id, event_id=item.reaction_id
+                room_id=packet.event.room_id, event_id=packet.reaction_id
             )
-            item.reaction_id = None
+            packet.reaction_id = None
 
-        await self.display_handler.render(media=processed_media, event=item.event)
+        await self.display_handler.render(media=processed_media, event=packet.event)
 
-    async def execute_query_route(self, item: CommandPacket) -> None:
+    async def execute_query_route(self, packet: CommandPacket) -> None:
         url = await self.query_handler.query_image_controller(
-            query=item.args["query"],
-            provider=item.args["api_provider"],
+            query=packet.args["query"],
+            provider=packet.args["api_provider"],
         )
 
         valid_urls = self.url_handler.process_string(message=url)
@@ -67,12 +71,15 @@ class RouteExecutor:
             urls=valid_urls,
         )
 
-        if item.reaction_id:
+        if packet.reaction_id:
             await self.client.redact(
-                room_id=item.event.room_id, event_id=item.reaction_id
+                room_id=packet.event.room_id, event_id=packet.reaction_id
             )
-            item.reaction_id = None
+            packet.reaction_id = None
 
         await self.display_handler.render(
-            media=processed_media, event=item.event, reply=False
+            media=processed_media, event=packet.event, reply=False
         )
+
+    async def execute_debug_route(self, packet: CommandPacket) -> None:
+        return
