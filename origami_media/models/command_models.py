@@ -12,6 +12,7 @@ class Route(Enum):
     URL = auto()
     QUERY = auto()
     PRINT = auto()
+    DEBUG = auto()
 
 
 class Command:
@@ -73,6 +74,11 @@ BASE_COMMANDS = {
         route=Route.QUERY,
         description="Roll for a random Waifu.",
         api_provider="waifu",
+    ),
+    "debug": Command(
+        name="debug",
+        route=Route.DEBUG,
+        description="N/A",
     ),
 }
 

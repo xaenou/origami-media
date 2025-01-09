@@ -55,9 +55,9 @@ class ProcessWorker:
                             timeout=self.ROUTE_EXECUTION_TIMEOUT,
                         )
                     except asyncio.TimeoutError:
-                        self.log.warning("Timeout while executing default branch.")
+                        self.log.warning("Timeout while executing url branch.")
                     except Exception as e:
-                        self.log.error(f"Error during default branch execution: {e}")
+                        self.log.error(f"Error during url branch execution: {e}")
 
                 elif packet.route == Route.QUERY:
                     try:
@@ -69,6 +69,19 @@ class ProcessWorker:
                         self.log.warning("Timeout while executing query branch.")
                     except Exception as e:
                         self.log.error(f"Error during query branch execution: {e}")
+
+                elif packet.route == Route.DEBUG and self.config.meta.get(
+                    "debug", False
+                ):
+                    try:
+                        await asyncio.wait_for(
+                            self.route_executor.execute_debug_route(packet),
+                            timeout=self.ROUTE_EXECUTION_TIMEOUT,
+                        )
+                    except asyncio.TimeoutError:
+                        self.log.warning("Timeout while executing debug branch.")
+                    except Exception as e:
+                        self.log.error(f"Error during debug branch execution: {e}")
 
             except asyncio.TimeoutError:
                 self.log.warning(

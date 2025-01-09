@@ -42,8 +42,8 @@ class Ytdlp:
         output_arg = "-"
 
         proxy = ""
-        if self.config.ytdlp.get("proxy_enabled", False):
-            proxy_config = self.config.ytdlp.get("proxy")
+        if self.config.meta.get("enable_proxy", False):
+            proxy_config = self.config.meta.get("proxy")
             if proxy_config:
                 proxy = f"--proxy {shlex.quote(proxy_config)}"
 

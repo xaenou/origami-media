@@ -100,6 +100,12 @@ class EventProcessor:
                 data={"content": content},
             )
 
+        elif command.route == Route.DEBUG and self.config.meta.get("debug", False):
+            return CommandPacket(
+                command=command,
+                event=event,
+            )
+
         return None
 
     def _resolve_command(self, command_name: str) -> Optional[Command]:

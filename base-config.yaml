@@ -2,7 +2,9 @@ meta:
   enable_passive_url_detection: true
   enable_commands: true
   censor_trackers: true
-  debug: true
+  debug: false
+  enable_proxy: false # not fully implemented yet
+  proxy: #
 
 whitelist:
   - youtube.com
@@ -18,8 +20,6 @@ whitelist:
   - waifu.im
 
 ytdlp:
-  proxy_enabled: false
-  proxy: #
   active_preset: "Default"
   presets:
     - name: "Default"
@@ -61,12 +61,6 @@ queue:
 
   max_message_url_count: 1
   # If a message has >= this amount of urls it is not processed.
-
-log: # wip
-  debug: true
-  exception: true
-  warning: true
-  info: true
 
 command:
   command_prefix: "!"
