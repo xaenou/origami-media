@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import random
 import urllib.parse
 from typing import TYPE_CHECKING, Optional
@@ -6,7 +8,7 @@ if TYPE_CHECKING:
     from aiohttp import ClientSession
     from mautrix.util.logging.trace import TraceLogger
 
-    from origami_media.origami_media import Config
+    from origami_media.main import Config
 
 
 class QueryHandler:

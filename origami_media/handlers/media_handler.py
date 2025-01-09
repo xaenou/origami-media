@@ -1,35 +1,19 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from io import BytesIO
 from typing import TYPE_CHECKING, Optional, Tuple
 
-from .media_utils.media_processor import MediaProcessor
-from .media_utils.synapse_processor import SynapseProcessor
+from origami_media.models.media_models import ProcessedMedia
+from origami_media.utils.media_processor import MediaProcessor
+from origami_media.utils.media_uploader import SynapseProcessor
 
 if TYPE_CHECKING:
     from aiohttp import ClientSession
     from maubot.matrix import MaubotMatrixClient
     from mautrix.util.logging.trace import TraceLogger
 
-    from origami_media.origami_media import Config
-
-    from .media_utils.media_processor import Media, MediaInfo
-
-
-@dataclass
-class ProcessedMedia:
-    filename: str
-    content_info: "MediaInfo"
-    content_uri: str
-    thumbnail_info: Optional["MediaInfo"]
-    thumbnail_uri: Optional[str]
-
-    def __str__(self):
-        return (
-            f"ProcessedMedia(content_uri='{self.content_uri}', "
-            f"thumbnail_uri='{self.thumbnail_uri or 'None'}')"
-        )
+    from origami_media.main import Config
+    from origami_media.models.media_models import Media
 
 
 class MediaHandler:

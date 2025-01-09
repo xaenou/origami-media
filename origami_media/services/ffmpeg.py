@@ -1,22 +1,16 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Dict, Literal, Optional, Union
+from typing import TYPE_CHECKING, Any, Dict, Optional
 
 from mautrix.util.ffmpeg import convert_bytes, probe_bytes
+
+from origami_media.models.ffmpeg_models import FfmpegMetadata
 
 if TYPE_CHECKING:
     from mautrix.util.logging.trace import TraceLogger
 
-    from origami_media.origami_media import Config
-
-
-@dataclass
-class FfmpegMetadata:
-    width: int
-    height: int
-    duration: float
+    from origami_media.main import Config
 
 
 class Ffmpeg:

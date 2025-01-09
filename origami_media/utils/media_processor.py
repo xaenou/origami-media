@@ -3,58 +3,23 @@ from __future__ import annotations
 import re
 import unicodedata
 import uuid
-from dataclasses import dataclass
 from io import BytesIO
-from typing import TYPE_CHECKING, Dict, Literal, Optional, Tuple
+from typing import TYPE_CHECKING, Dict, Optional, Tuple
 from urllib.parse import urlparse
 
 from mautrix.util.magic import mimetype
 
-from .media_processor_utils.ffmpeg import Ffmpeg
-from .media_processor_utils.native import Native
-from .media_processor_utils.ytdlp import Ytdlp
+from origami_media.models.media_models import Media, MediaFile, MediaInfo
+from origami_media.services.ffmpeg import Ffmpeg
+from origami_media.services.native import Native
+from origami_media.services.ytdlp import Ytdlp
 
 if TYPE_CHECKING:
     from aiohttp import ClientSession
     from mautrix.util.logging.trace import TraceLogger
-    from media_processor_utils.ffmpeg import FfmpegMetadata
 
-    from origami_media.origami_media import Config
-
-
-@dataclass
-class MediaInfo:
-    url: str
-    media_type: str
-    origin: Literal["simple", "advanced", "thumbnail"]
-    id: str
-    mimetype: str
-    thumbnail_url: Optional[str] = None
-    title: Optional[str] = None
-    uploader: Optional[str] = None
-    extractor: Optional[str] = None
-    ext: Optional[str] = None
-    duration: Optional[float] = None
-    width: Optional[int] = None
-    height: Optional[int] = None
-    size: Optional[int] = None
-
-
-@dataclass
-class MediaFile:
-    filename: str
-    metadata: MediaInfo
-    stream: BytesIO = BytesIO()
-
-    def __del__(self):
-        if not self.stream.closed:
-            self.stream.close()
-
-
-@dataclass
-class Media:
-    content: MediaFile
-    thumbnail: Optional[MediaFile] = None
+    from origami_media.main import Config
+    from origami_media.services.ffmpeg import FfmpegMetadata
 
 
 class MediaProcessor:

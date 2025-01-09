@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import re
 from typing import TYPE_CHECKING, Optional
 from urllib.parse import urlparse
@@ -6,7 +8,7 @@ if TYPE_CHECKING:
     from maubot.matrix import MaubotMessageEvent
     from mautrix.util.logging.trace import TraceLogger
 
-    from origami_media.origami_media import Config
+    from origami_media.main import Config
 
 
 class UrlHandler:

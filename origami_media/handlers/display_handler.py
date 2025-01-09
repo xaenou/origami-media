@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from typing import TYPE_CHECKING
 
 from mautrix.types import (
@@ -15,7 +17,7 @@ if TYPE_CHECKING:
     from maubot.matrix import MaubotMatrixClient, MaubotMessageEvent
     from mautrix.util.logging.trace import TraceLogger
 
-    from origami_media.origami_media import Config
+    from origami_media.main import Config
 
     from .media_handler import ProcessedMedia
 

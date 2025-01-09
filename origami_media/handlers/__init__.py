@@ -1,7 +1,6 @@
-# __init__.py (Handlers)
 from .dependency_handler import DependencyHandler
 from .display_handler import DisplayHandler
-from .media_handler import MediaHandler, ProcessedMedia
+from .media_handler import MediaHandler
 from .query_handler import QueryHandler
 from .url_handler import UrlHandler
 
@@ -11,5 +10,4 @@ __all__ = [
     "DisplayHandler",
     "MediaHandler",
     "UrlHandler",
-    "ProcessedMedia",
 ]

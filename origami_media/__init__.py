@@ -1,1 +1,1 @@
-from .origami_media import OrigamiMedia
+from .main import OrigamiMedia

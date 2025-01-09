@@ -7,7 +7,7 @@ if TYPE_CHECKING:
     from maubot.matrix import MaubotMatrixClient
     from mautrix.util.logging.trace import TraceLogger
 
-    from origami_media.origami_media import Config
+    from origami_media.main import Config
 
 
 class SynapseProcessor:

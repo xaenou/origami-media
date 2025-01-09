@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import asyncio
 import json
 import shlex
@@ -7,7 +9,7 @@ from typing import TYPE_CHECKING, List
 if TYPE_CHECKING:
     from mautrix.util.logging.trace import TraceLogger
 
-    from origami_media.origami_media import Config
+    from origami_media.main import Config
 
 
 class Ytdlp:

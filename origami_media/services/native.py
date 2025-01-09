@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import asyncio
 from io import BytesIO
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from aiohttp import ClientSession
     from mautrix.util.logging.trace import TraceLogger
 
-    from origami_media.origami_media import Config
+    from origami_media.main import Config
 
 
 class Native:
