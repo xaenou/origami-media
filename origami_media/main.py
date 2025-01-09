@@ -84,6 +84,7 @@ class OrigamiMedia(Plugin):
         self.event_processor = EventProcessor(
             config=self.config, url_handler=self.url_handler
         )
+
         self.route_executer = RouteExecutor(
             config=self.config,
             log=self.log,
@@ -93,14 +94,11 @@ class OrigamiMedia(Plugin):
             query_handler=self.query_handler,
             url_handler=self.url_handler,
         )
+
         self.worker_manager = Manager(
             config=self.config,
             log=self.log,
             client=self.client,
-            display_handler=self.display_handler,
-            media_handler=self.media_handler,
-            query_handler=self.query_handler,
-            url_handler=self.url_handler,
             route_executer=self.route_executer,
         )
 
@@ -125,6 +123,7 @@ class OrigamiMedia(Plugin):
             if packet:
                 self.worker_manager.spawn_preprocess_worker(packet)
                 return
+
         except Exception as e:
             self.log.error(f"Error occurred in main: {e}")
 

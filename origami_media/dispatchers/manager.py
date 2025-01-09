@@ -11,10 +11,6 @@ if TYPE_CHECKING:
     from mautrix.util.logging.trace import TraceLogger
 
     from origami_media.dispatchers.route_executer import RouteExecutor
-    from origami_media.handlers.display_handler import DisplayHandler
-    from origami_media.handlers.media_handler import MediaHandler
-    from origami_media.handlers.query_handler import QueryHandler
-    from origami_media.handlers.url_handler import UrlHandler
     from origami_media.main import Config
     from origami_media.models.command_models import CommandPacket
 
@@ -25,19 +21,11 @@ class Manager:
         log: "TraceLogger",
         config: "Config",
         client: "MaubotMatrixClient",
-        display_handler: "DisplayHandler",
-        media_handler: "MediaHandler",
-        query_handler: "QueryHandler",
-        url_handler: "UrlHandler",
         route_executer: "RouteExecutor",
     ):
         self.log = log
         self.config = config
         self.client = client
-        self.display_handler = display_handler
-        self.media_handler = media_handler
-        self.query_handler = query_handler
-        self.url_handler = url_handler
         self.route_executer = route_executer
 
         self.ROUTE_EXECUTION_TIMEOUT = 180
