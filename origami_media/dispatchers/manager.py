@@ -10,7 +10,7 @@ if TYPE_CHECKING:
     from maubot.matrix import MaubotMatrixClient
     from mautrix.util.logging.trace import TraceLogger
 
-    from origami_media.dispatchers.route_executer import RouteExecutor
+    from origami_media.handlers.command_handler import CommandHandler
     from origami_media.main import Config
     from origami_media.models.command_models import CommandPacket
 
@@ -21,16 +21,16 @@ class Manager:
         log: "TraceLogger",
         config: "Config",
         client: "MaubotMatrixClient",
-        route_executer: "RouteExecutor",
+        command_handler: "CommandHandler",
     ):
         self.log = log
         self.config = config
         self.client = client
-        self.route_executer = route_executer
+        self.command_handler = command_handler
 
         self.ROUTE_EXECUTION_TIMEOUT = 180
-        self.initial_reaction_tasks = set()
-        self.initial_reaction_lock = asyncio.Lock()
+        self.preprocess_tasks = set()
+        self.preprocess_lock = asyncio.Lock()
 
         self.event_queue = asyncio.Queue(
             self.config.queue.get("event_queue_capacity", 10)
@@ -39,8 +39,9 @@ class Manager:
         self.preprocess_worker = PreprocessWorker(
             log=self.log,
             config=self.config,
-            initial_reaction_lock=self.initial_reaction_lock,
-            initial_reaction_tasks=self.initial_reaction_tasks,
+            preprocess_lock=self.preprocess_lock,
+            preprocess_tasks=self.preprocess_tasks,
+            command_handler=self.command_handler,
             event_queue=self.event_queue,
         )
 
@@ -48,11 +49,9 @@ class Manager:
             log=self.log,
             config=self.config,
             client=self.client,
-            initial_reaction_lock=self.initial_reaction_lock,
-            initial_reaction_tasks=self.initial_reaction_tasks,
             event_queue=self.event_queue,
             ROUTE_EXECUTION_TIMEOUT=self.ROUTE_EXECUTION_TIMEOUT,
-            route_executer=self.route_executer,
+            command_handler=self.command_handler,
         )
 
     async def spawn_process_workers(self) -> None:
@@ -70,5 +69,5 @@ class Manager:
 
         await asyncio.gather(*self.process_workers, return_exceptions=True)
 
-        async with self.initial_reaction_lock:
-            self.initial_reaction_tasks.clear()
+        async with self.preprocess_lock:
+            self.preprocess_tasks.clear()

@@ -8,7 +8,7 @@ if TYPE_CHECKING:
     from mautrix.types import EventID
 
 
-class Route(Enum):
+class CommandType(Enum):
     URL = auto()
     QUERY = auto()
     PRINT = auto()
@@ -19,66 +19,69 @@ class Command:
     def __init__(
         self,
         name: str,
-        route: Route,
+        type: CommandType,
         description: str,
         modifier: Optional[str] = None,
-        api_provider: Optional[str] = None,
     ):
         self.name = name
-        self.route = route
+        self.type = type
         self.description = description
         self.modifier = modifier
-        self.api_provider = api_provider
 
     def __repr__(self):
-        return f"<Command name={self.name} route={self.route}>"
+        return f"<Command name={self.name} type={self.type}>"
 
 
 BASE_COMMANDS = {
     "help": Command(
         name="help",
-        route=Route.PRINT,
+        type=CommandType.PRINT,
         description="Show this help message.",
     ),
     "get": Command(
         name="get",
-        route=Route.URL,
+        type=CommandType.URL,
         description="Download media from a url.",
     ),
     "audio": Command(
         name="audio",
-        route=Route.URL,
+        type=CommandType.URL,
         description="Download audio only for a url.",
         modifier="force_audio_only",
     ),
     "tenor": Command(
         name="tenor",
-        route=Route.QUERY,
+        type=CommandType.QUERY,
         description="Download gif by querying tenor.",
-        api_provider="tenor",
+        modifier="tenor",
     ),
     "unsplash": Command(
         name="unsplash",
-        route=Route.QUERY,
+        type=CommandType.QUERY,
         description="Download image by querying unsplash.",
-        api_provider="unsplash",
+        modifier="unsplash",
     ),
     "lexica": Command(
         name="lexica",
-        route=Route.QUERY,
+        type=CommandType.QUERY,
         description="Download an image by querying Lexica.",
-        api_provider="lexica",
+        modifier="lexica",
     ),
     "waifu": Command(
         name="waifu",
-        route=Route.QUERY,
+        type=CommandType.QUERY,
         description="Roll for a random Waifu.",
-        api_provider="waifu",
+        modifier="waifu",
     ),
     "debug": Command(
         name="debug",
-        route=Route.DEBUG,
+        type=CommandType.DEBUG,
         description="N/A",
+    ),
+    "cookies": Command(
+        name="cookies",
+        type=CommandType.DEBUG,
+        description="Set cookies from config.",
     ),
 }
 
@@ -97,15 +100,14 @@ class CommandPacket:
         self,
         command: Command,
         event: "MaubotMessageEvent",
-        args: Optional[Dict[str, Any]] = None,
+        user_args: str,
         data: Optional[Dict[str, Any]] = None,
     ):
         self.command = command
-        self.route = command.route
         self.event = event
-        self.args = args or {}
+        self.user_args = user_args
         self.data = data or {}
         self.reaction_id: Optional["EventID"] = None
 
     def __repr__(self):
-        return f"<CommandPacket command={self.command.name} route={self.route}>"
+        return f"< CommandPacket command={self.command.name} command type={self.command.type} >"

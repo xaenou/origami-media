@@ -3,9 +3,9 @@ from __future__ import annotations
 from io import BytesIO
 from typing import TYPE_CHECKING, Optional, Tuple
 
+from origami_media.handler_utils.media_processor import MediaProcessor
+from origami_media.handler_utils.media_uploader import SynapseProcessor
 from origami_media.models.media_models import ProcessedMedia
-from origami_media.utils.media_processor import MediaProcessor
-from origami_media.utils.media_uploader import SynapseProcessor
 
 if TYPE_CHECKING:
     from aiohttp import ClientSession

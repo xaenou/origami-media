@@ -3,30 +3,23 @@ meta:
   enable_commands: true
   censor_trackers: true
   debug: false
-  enable_proxy: false # not fully implemented yet
-  proxy: #
+  enable_proxy: false # only implemented for yt-dlp right now
+  proxy: "SECRET"
+  enable_custom_user_agent: False # only implemented for yt-dlp right now
+  custom_user_agent: "PLACEHOLDER"
 
 whitelist:
-  - youtube.com
-  - youtu.be
-  - twitter.com
-  - x.com
-  - rumble.com
-  - odysee.com
-  - bitchute.com
-  - 4cdn.org
-  - tenor.com
-  - unsplash.com
-  - waifu.im
-
-ytdlp:
-  active_preset: "Default"
-  presets:
-    - name: "Default"
-      formats:
-        - "worst"
-        - "bestvideo[height<=720]+bestaudio/best[height<=720]"
-        - "bestvideo[height<=1080]+bestaudio/best[height<=1080]"
+  - "youtube.com"
+  - "youtu.be"
+  - "twitter.com"
+  - "x.com"
+  - "rumble.com"
+  - "odysee.com"
+  - "bitchute.com"
+  - "4cdn.org"
+  - "tenor.com"
+  - "unsplash.com"
+  - "waifu.im"
 
 ffmpeg:
   enable_livestream_previews: true
@@ -42,28 +35,25 @@ file:
 
 queue:
   preprocess_worker_limit: 10
-  # [Preprocess Worker]
-  # Role: Dynamically instantiated asyncio tasks that handle event preprocessing.
-  # Trigger: Activated when validated events arrive from the main event loop.
-  # Purpose: Add the initial hourglass reaction and enqueue the preprocessed event.
-
   event_queue_capacity: 100
-  # [Preprocessed Event Queue]
-  # Role: Static asyncio queue buffer for validated, preprocessed events.
-  # Trigger: Instantiated in the plugin start method.
-  # Purpose: Prevents overload by buffering events when downstream processing lags behind event arrival.
-
   process_worker_count: 1
-  # [Process Worker]
-  # Role: Static asyncio tasks handle event processing.
-  # Trigger: Instantiated in the plugin start method.
-  # Purpose: Continuously dequeues, processes, and renders media.
-
   max_message_url_count: 1
-  # If a message has >= this amount of urls it is not processed.
 
 command:
   command_prefix: "!"
   query_image:
-    tenor_api_key: #
-    unsplash_api_key: #
+    tenor_api_key: "SECRET"
+    unsplash_api_key: "SECRET"
+
+ytdlp:
+  active_preset: "Default"
+  presets:
+    - name: "Default"
+      formats:
+        - "worst"
+        - "bestvideo[height<=720]+bestaudio/best[height<=720]"
+        - "bestvideo[height<=1080]+bestaudio/best[height<=1080]"
+  enable_cookies: False
+
+  # In maubout manager paste the cookies in underneath cookies file. Make sure the line stays intact. Then highlight the text and press tab or shift-tab until the text is red.
+  cookies_file: |

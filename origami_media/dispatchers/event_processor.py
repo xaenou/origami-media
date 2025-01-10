@@ -9,7 +9,6 @@ from origami_media.models.command_models import (
     BASE_COMMANDS,
     Command,
     CommandPacket,
-    Route,
 )
 
 if TYPE_CHECKING:
@@ -35,78 +34,29 @@ class EventProcessor:
         if "http" not in event.content.body:
             return
 
-        url_tuple = self.url_handler.process(event)
-        if not url_tuple:
-            return
-
         command = BASE_COMMANDS.get("get")
         if not command:
-            return None
+            return
 
-        return CommandPacket(
-            command=command,
-            event=event,
-            data={"url_tuple": url_tuple},
-            args={"media_modifier": None},
-        )
+        return CommandPacket(command=command, event=event, user_args="")
 
     def handle_active(self, event: MaubotMessageEvent) -> Optional[CommandPacket]:
-        return self._build_command_packet(event=event)
-
-    def _build_command_packet(
-        self, event: "MaubotMessageEvent"
-    ) -> Optional[CommandPacket]:
         if not self.config.meta.get("enable_commands", False):
             return None
 
         body = cast(str, event.content.body)
+        if not body.strip():
+            return None
+
         parts = body.split(" ", 1)
         command_name = parts[0]
-        argument = parts[1] if len(parts) > 1 else ""
+        user_args = parts[1].strip() if len(parts) > 1 else ""
 
         command = self._resolve_command(command_name)
         if not command:
             return None
 
-        if command.route == Route.URL:
-            url_tuple = self.url_handler.process(event)
-            if not url_tuple:
-                return None
-
-            return CommandPacket(
-                command=command,
-                event=event,
-                data={"url_tuple": url_tuple},
-                args={"media_modifier": command.modifier},
-            )
-
-        elif command.route == Route.QUERY:
-            return CommandPacket(
-                command=command,
-                event=event,
-                args={
-                    "query": argument,
-                    "api_provider": command.api_provider,
-                },
-            )
-
-        elif command.route == Route.PRINT:
-            content_function = getattr(self, command.name, None)
-            content = content_function() if callable(content_function) else command.name
-
-            return CommandPacket(
-                command=command,
-                event=event,
-                data={"content": content},
-            )
-
-        elif command.route == Route.DEBUG and self.config.meta.get("debug", False):
-            return CommandPacket(
-                command=command,
-                event=event,
-            )
-
-        return None
+        return CommandPacket(command=command, event=event, user_args=user_args)
 
     def _resolve_command(self, command_name: str) -> Optional[Command]:
         command_name = command_name[len(self.command_prefix) :]
@@ -115,23 +65,3 @@ class EventProcessor:
             command_name = ALIASES[command_name]
 
         return BASE_COMMANDS.get(command_name)
-
-    def help(self) -> str:
-        help_message = "**Available Commands:**\n"
-        for command, details in BASE_COMMANDS.items():
-            description = details.description
-            aliases = [alias for alias, target in ALIASES.items() if target == command]
-            alias_text = f" (Aliases: {', '.join(aliases)})" if aliases else ""
-
-            if command == "waifu":
-                arg_text = ""
-            elif details.route == Route.QUERY:
-                arg_text = "[query]"
-            elif details.route == Route.URL:
-                arg_text = "[url]"
-            else:
-                arg_text = ""
-
-            help_message += f"- `{self.command_prefix}{command} {arg_text}`: {description}{alias_text}\n"
-
-        return help_message

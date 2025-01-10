@@ -9,8 +9,9 @@ from maubot.plugin_base import Plugin
 from mautrix.types import EventType
 from mautrix.util.config import BaseProxyConfig, ConfigUpdateHelper
 
-from origami_media.dispatchers import EventProcessor, Manager, RouteExecutor
+from origami_media.dispatchers import EventProcessor, Manager
 from origami_media.handlers import (
+    CommandHandler,
     DependencyHandler,
     DisplayHandler,
     MediaHandler,
@@ -85,10 +86,11 @@ class OrigamiMedia(Plugin):
             config=self.config, url_handler=self.url_handler
         )
 
-        self.route_executer = RouteExecutor(
+        self.command_handler = CommandHandler(
             config=self.config,
             log=self.log,
             client=self.client,
+            http=self.http,
             display_handler=self.display_handler,
             media_handler=self.media_handler,
             query_handler=self.query_handler,
@@ -99,7 +101,7 @@ class OrigamiMedia(Plugin):
             config=self.config,
             log=self.log,
             client=self.client,
-            route_executer=self.route_executer,
+            command_handler=self.command_handler,
         )
 
         await self.worker_manager.spawn_process_workers()

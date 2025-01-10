@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from io import BytesIO
 from typing import TYPE_CHECKING
 
@@ -125,3 +126,33 @@ class Native:
             f"client_download: Failed to stream data after {max_retries} attempts."
         )
         raise
+
+    def write_to_directory(self, content, directory, file_name):
+        if not os.path.exists(directory):
+            os.makedirs(directory)
+
+        file_path = os.path.join(directory, file_name)
+
+        try:
+            with open(file_path, "w") as file:
+                file.write(content)
+
+            self.log.info(f"Successfully written to {file_path}")
+            return True
+        except Exception as e:
+            self.log.info(f"An error occurred: {e}")
+            return False
+
+    def read_from_file(self, directory: str, file_name: str) -> str:
+        file_path = os.path.join(directory, file_name)
+        try:
+            with open(file_path, "r") as file:
+                return file.read()
+        except FileNotFoundError as e:
+            self.log.info(
+                f"python: File {file_path} not found. Please ensure it exists."
+            )
+            raise e
+        except Exception as e:
+            self.log.info(f"python: An error occurred: {e}")
+            raise e

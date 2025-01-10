@@ -45,7 +45,19 @@ class Ytdlp:
         if self.config.meta.get("enable_proxy", False):
             proxy_config = self.config.meta.get("proxy")
             if proxy_config:
-                proxy = f"--proxy {shlex.quote(proxy_config)}"
+                proxy = f"--proxy '{proxy_config}'"
+
+        user_agent = ""
+        if self.config.meta.get("enable_custom_user_agent"):
+            custom_user_agent = self.config.meta.get("custom_user_agent")
+            if custom_user_agent:
+                user_agent = f"--user-agent '{custom_user_agent}'"
+
+        cookies = ""
+        if self.config.ytdlp.get("enable_cookies"):
+            cookies_dir = "/tmp/cookies.txt"
+            if cookies_dir:
+                cookies = f"--cookies '{cookies_dir}'"
 
         for format_entry in active_formats:
             if not format_entry:
@@ -58,14 +70,14 @@ class Ytdlp:
                 result_commands.append(
                     {
                         "name": active_preset,
-                        "command": f"yt-dlp -q --no-warnings {query_flags} {proxy} -f '{format_entry}' {escaped_url}",
+                        "command": f"yt-dlp -q --no-warnings {query_flags} {cookies} {user_agent} {proxy} -f '{format_entry}' {escaped_url}",
                     }
                 )
             else:
                 result_commands.append(
                     {
                         "name": active_preset,
-                        "command": f"yt-dlp -q --no-warnings {proxy} -f '{format_entry}' -o '{output_arg}' {escaped_url}",
+                        "command": f"yt-dlp -q --no-warnings {cookies} {user_agent} {proxy} -f '{format_entry}' -o '{output_arg}' {escaped_url}",
                     }
                 )
 

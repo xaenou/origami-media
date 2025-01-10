@@ -91,8 +91,6 @@ class QueryHandler:
         query: str,
         provider: str,
     ) -> str:
-        if not query:
-            query = "."
 
         api_key = None
         if provider in ["tenor", "unsplash"]:
