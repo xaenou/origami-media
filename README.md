@@ -8,6 +8,7 @@ A brief list of some of the current features:
 - Dynamic thumbnail generation
 - Configurable concurrency
 - An event queue
+- Batch processing
 - File size constraints
 - Custom command prefixes
 - Cookies, proxies, custom user agents, preferred format, and fallback formats for ytdlp
