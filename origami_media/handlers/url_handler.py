@@ -17,12 +17,12 @@ class UrlHandler:
         self.log = log
 
     DETECT_YOUTUBE_TRACKERS = re.compile(
-        r"https?://(?:www\.)?(?:youtube\.com/watch\?v=|youtu\.be/)([a-zA-Z0-9_-]+)(?:[?&]\S+)+",
+        r"https?://(?:www\.)?(?:youtube\.com/(?:watch\?v=|shorts/)|youtu\.be/)([a-zA-Z0-9_-]+)(?:[?&]\S+)*",
         re.IGNORECASE,
     )
 
     EXTRACT_YOUTUBE_VIDEO_ID = re.compile(
-        r"https?://(?:www\.)?(?:youtube\.com/watch\?v=|youtu\.be/)([a-zA-Z0-9_-]+)"
+        r"https?://(?:www\.)?(?:youtube\.com/(?:watch\?v=|shorts/)|youtu\.be/)([a-zA-Z0-9_-]+)"
     )
 
     TIMESTAMP_REGEX = re.compile(r"[?&]t=(\d+)")
@@ -50,7 +50,7 @@ class UrlHandler:
     def _process_youtube_url(self, url: str) -> str | None:
         video_match = self.EXTRACT_YOUTUBE_VIDEO_ID.search(url)
         if not video_match:
-            self.log.warning("Invalid YouTube URL.")
+            self.log.warning(f"Invalid YouTube URL: {url}.")
             return None
 
         video_id = video_match.group(1)

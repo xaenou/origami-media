@@ -63,7 +63,7 @@ class OrigamiMedia(Plugin):
     config: Config
 
     async def start(self):
-        self.log.info(f"Starting Origami Media")
+        self.log.info(f"Starting Origami Media Bot")
         await super().start()
 
         if not self.config:
