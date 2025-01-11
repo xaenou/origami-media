@@ -1,35 +1,41 @@
 # Origami Media
 
-The purpose of this maubot plugin is to process and display media for matrix servers when a url is detected or the appropriate command is supplied with a valid url.
-Currently almost all video and image formats are supported. Standalone audio stream support coming soon.
+The purpose of this maubot plugin is to process and display media for matrix servers when a valid url is detected or when the appropriate command is invoked.
 
 ## Features
 
-Almost everything is configurable and can be adjusted within the maubot manager dashboard of it's assigned instance.
-See base-config.yaml.
+A brief list of some of the current features:
+- Dynamic thumbnail generation
+- Configurable concurrency
+- An event queue
+- File size constraints
+- Custom command prefixes
+- Cookies, proxies, custom user agents, preferred format, and fallback formats for ytdlp
+- Livestream previews via ffmpeg
+- Censor tracking links posted by users
+- Media standardization (e.g. webms can be auto converted to mp4s)
 
-- video embeddings
-- image embeddings
-- queues
-- concurrency
-- passive URL listening
-- url validation
-- domain whitelist
-- file size control
-- dynamic yt-dlp config
-- dynamic ffmpeg config
-- filesize constraints, in and out of memory
-- various fallback support
-- livestream previews
+and more, all configurable in real time via the maubot manager dashboard.
 
-and much more.
+## Commands
 
-## Server Dependencies
+A basic overview of the current commands supported:
+- `!help`: Show this help message.
+- `!get [url]`: Download media from a url.
+- `!audio [url]`: Download audio only for a url. (Aliases: mp3)
+- `!tenor [query]`: Download gif by querying tenor. (Aliases: gif)
+- `!unsplash [query]`: Download image by querying unsplash. (Aliases: img)
+- `!lexica [query]`: Download an image by querying Lexica. (Aliases: lex)
+- `!waifu`: Roll for a random Waifu. (Aliases: girl, g)
 
-- maubot
+Note: If passive url detection is enable it applies the get command to whitelisted urls.
+
+## Dependencies
+
+- Maubot
 - yt-dlp cli
 - ffmpeg cli
 
 ## Planned features
 
-See: Issues
+- See issues
