@@ -22,7 +22,7 @@ class ProcessedMedia:
 class MediaInfo:
     url: str
     media_type: str
-    origin: Literal["simple", "advanced", "thumbnail"]
+    origin: Literal["simple", "advanced", "thumbnail", "advanced-thumbnail-fallback"]
     id: str
     mimetype: str
     thumbnail_url: Optional[str] = None
@@ -34,6 +34,8 @@ class MediaInfo:
     width: Optional[int] = None
     height: Optional[int] = None
     size: Optional[int] = None
+    meta_size: Optional[int] = None  # for thumbnail fallback
+    meta_duration: Optional[int] = None  # for thumbnail fallback
 
 
 @dataclass

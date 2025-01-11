@@ -46,6 +46,7 @@ command:
     unsplash_api_key: "SECRET"
 
 ytdlp:
+  enable_thumbnail_fallback_if_duration_or_size_exceeds: true
   active_preset: "Default"
   presets:
     - name: "Default"

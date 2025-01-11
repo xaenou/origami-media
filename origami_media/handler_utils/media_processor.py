@@ -12,7 +12,7 @@ from mautrix.util.magic import mimetype
 from origami_media.models.media_models import Media, MediaFile, MediaInfo
 from origami_media.services.ffmpeg import Ffmpeg
 from origami_media.services.native import Native
-from origami_media.services.ytdlp import Ytdlp
+from origami_media.services.ytdlp import DownloadSizeExceededError, Ytdlp
 
 if TYPE_CHECKING:
     from aiohttp import ClientSession
@@ -33,6 +33,17 @@ class MediaProcessor:
         self.native_controller = Native(
             log=self.log, config=self.config, http=self.http
         )
+
+    async def _attempt_thumbnail_fallback(
+        self, ytdlp_metadata: dict
+    ) -> Optional[bytes]:
+        self.log.info("Attempting to fallback to thumbnail.")
+        if not ytdlp_metadata.get("thumbnail"):
+            self.log.warning("No thumbnail found.")
+            return None
+
+        data = await self._download_simple_media(ytdlp_metadata["thumbnail"])
+        return data
 
     async def _post_process(
         self, data: bytes, modifier=None
@@ -81,38 +92,72 @@ class MediaProcessor:
             self._handle_download_error(error_message)
             return None
 
-    async def _download_advanced_media(self, ytdlp_metadata: dict) -> Optional[bytes]:
+    async def _download_advanced_media(
+        self, ytdlp_metadata: dict
+    ) -> Tuple[Optional[bytes], bool]:
+        # The bool is if the thumbnail fallback was used.
         try:
-            if ytdlp_metadata.get("is_live", False):
-                if not self.config.ffmpeg.get("enable_livestream_previews", False):
-                    raise RuntimeError(
+            # Handle live media
+            if ytdlp_metadata.get("is_live"):
+                if not self.config.ffmpeg.get("enable_livestream_previews"):
+                    self.log.warning(
                         "Live media detected, but livestream previews are disabled."
                     )
-
+                    return None, False
                 data = await self.ffmpeg_controller.capture_livestream(
                     stream_url=ytdlp_metadata["url"]
                 )
+                is_thumbnail_fallback = False
+                return data, is_thumbnail_fallback
 
-            else:
+            # Check duration constraints
+            duration = ytdlp_metadata.get("duration")
+            max_duration = self.config.file.get("max_duration", 0)
+            if duration and duration > max_duration:
+                self.log.warning("Media length exceeds the configured duration limit.")
+                if not self.config.ytdlp.get(
+                    "enable_thumbnail_fallback_if_duration_or_size_exceeds"
+                ):
+                    return None, False
+                data = await self._attempt_thumbnail_fallback(ytdlp_metadata)
+                is_thumbnail_fallback = True
+                return data, is_thumbnail_fallback
 
-                if (duration := ytdlp_metadata.get("duration")) is not None:
-                    if duration > self.config.file.get("max_duration", 0):
-                        raise RuntimeError(
-                            "Media length exceeds the configured duration limit."
-                        )
+            # Check size contraints
+            size = ytdlp_metadata.get("filesize_approx")
+            max_size = self.config.file.get("max_in_memory_file_size")
+            if size and size > max_size:
+                self.log.warning("Media size exceeds the configured size limit.")
+                if not self.config.ytdlp.get(
+                    "enable_thumbnail_fallback_if_duration_or_size_exceeds"
+                ):
+                    return None, False
+                data = await self._attempt_thumbnail_fallback(ytdlp_metadata)
+                is_thumbnail_fallback = True
+                return data, is_thumbnail_fallback
 
+            try:
                 data = await self.ytdlp_controller.ytdlp_execute_download(
                     commands=self.ytdlp_controller.create_ytdlp_commands(
                         ytdlp_metadata["url"], command_type="download"
                     )
                 )
+                is_thumbnail_fallback = False
+                return data, is_thumbnail_fallback
 
-            return data
+            except DownloadSizeExceededError:
+                self.log.warning("Media size exceeds the configured file size limit.")
+                if not self.config.ytdlp.get(
+                    "enable_thumbnail_fallback_if_duration_or_size_exceeds"
+                ):
+                    return None, False
+                data = await self._attempt_thumbnail_fallback(ytdlp_metadata)
+                is_thumbnail_fallback = True
+                return data, is_thumbnail_fallback
 
         except Exception as e:
-            error_message = f"Failed to handle media: {e}"
-            self._handle_download_error(error_message)
-            return None
+            self._handle_download_error(f"Failed to handle media: {e}")
+            return None, False
 
     def _generate_filename(self, metadata: dict) -> str:
         filename = "{title}-{uploader}-{extractor}-{id}".format(
@@ -185,6 +230,8 @@ class MediaProcessor:
                 size=len(stream),
                 media_type=type_,
                 thumbnail_url=other_metadata.get("thumbnail"),
+                meta_size=other_metadata.get("meta_size"),
+                meta_duration=other_metadata.get("meta_duration"),
             ),
         )
 
@@ -205,7 +252,11 @@ class MediaProcessor:
         return self._create_media_object(data, metadata, ffmpeg_metadata)
 
     async def _process_advanced_media(
-        self, data: bytes, ytdlp_metadata: Dict, ffmpeg_metadata: FfmpegMetadata
+        self,
+        data: bytes,
+        ytdlp_metadata: Dict,
+        ffmpeg_metadata: FfmpegMetadata,
+        _is_thumbnail_fallback: bool,
     ) -> Optional[MediaFile]:
 
         mutated_ytdlp_metadata = {
@@ -217,6 +268,12 @@ class MediaProcessor:
             "origin": "advanced",
             "thumbnail": ytdlp_metadata.get("thumbnail"),
         }
+
+        if _is_thumbnail_fallback:
+            mutated_ytdlp_metadata["meta_duration"] = ytdlp_metadata.get("duration")
+            mutated_ytdlp_metadata["meta_size"] = ytdlp_metadata.get("filesize_approx")
+            mutated_ytdlp_metadata["origin"] = "advanced-thumbnail-fallback"
+            mutated_ytdlp_metadata["thumbnail"] = None
 
         return self._create_media_object(
             data, other_metadata=mutated_ytdlp_metadata, file_metadata=ffmpeg_metadata
@@ -268,7 +325,9 @@ class MediaProcessor:
 
         ytdlp_metadata = await self._query_advanced_media(url)
         if ytdlp_metadata:
-            data = await self._download_advanced_media(ytdlp_metadata=ytdlp_metadata)
+            data, _is_thumbnail_fallback = await self._download_advanced_media(
+                ytdlp_metadata=ytdlp_metadata
+            )
             if data:
                 result = await self._post_process(data, modifier=modifier)
                 if result:
@@ -277,6 +336,7 @@ class MediaProcessor:
                         data,
                         ffmpeg_metadata=metadata,
                         ytdlp_metadata=ytdlp_metadata,
+                        _is_thumbnail_fallback=_is_thumbnail_fallback,
                     )
 
         return None

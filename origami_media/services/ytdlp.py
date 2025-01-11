@@ -12,6 +12,16 @@ if TYPE_CHECKING:
     from origami_media.main import Config
 
 
+class DownloadSizeExceededError(Exception):
+    def __init__(self, name: str, total_size: int, max_file_size: int):
+        super().__init__(
+            f"{name}: File size limit exceeded ({total_size} > {max_file_size} bytes)."
+        )
+        self.name = name
+        self.total_size = total_size
+        self.max_file_size = max_file_size
+
+
 class Ytdlp:
     def __init__(self, config: "Config", log: "TraceLogger"):
         self.config = config
@@ -194,9 +204,7 @@ class Ytdlp:
                     total_size += chunk_size
 
                     if max_file_size > 0 and total_size > max_file_size:
-                        raise Exception(
-                            f"{name}: File size limit exceeded ({total_size} > {max_file_size} bytes)."
-                        )
+                        raise DownloadSizeExceededError(name, total_size, max_file_size)
 
                     video_data.write(chunk)
 

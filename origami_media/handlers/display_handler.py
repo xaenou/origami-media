@@ -2,10 +2,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from maubot.matrix import parse_formatted
 from mautrix.types import (
     AudioInfo,
     ContentURI,
     FileInfo,
+    Format,
     ImageInfo,
     ThumbnailInfo,
     VideoInfo,
@@ -30,6 +32,22 @@ class DisplayHandler:
         self.client = client
         self.config = config
 
+    def convert_extractor(self, key: str) -> str:
+        SERVICES = {
+            "youtube": "YouTube",
+            "youtu": "YouTube",
+            "twitter": "Twitter",
+            "x": "X",
+            "rumble": "Rumble",
+            "odysee": "Odysee",
+            "bitchute": "BitChute",
+            "4cdn": "4chan",
+            "tenor": "Tenor",
+            "unsplash": "Unsplash",
+            "waifu": "Waifu.im",
+        }
+        return SERVICES.get(key, key)
+
     async def _build_message_content(self, processed_media: "ProcessedMedia"):
         filename = processed_media.filename
         content_info = processed_media.content_info
@@ -48,9 +66,26 @@ class DisplayHandler:
                 mimetype=t_meta.mimetype,
                 size=int(t_size),
             )
+        body = None
 
         if content_info.media_type == "video":
             self.log.info("Content being rendered as video")
+            if content_info.origin == "advanced":
+                if content_info.size:
+                    size_in_MB = content_info.size / (1024 * 1024)
+                    size_str = f"{size_in_MB:.2f} MB"
+                if content_info.duration:
+                    total_seconds = int(content_info.duration)
+                    hours = total_seconds // 3600
+                    minutes = (total_seconds % 3600) // 60
+                    seconds = total_seconds % 60
+                    if hours > 0:
+                        duration_str = f"{hours:02}:{minutes:02}:{seconds:02}"
+                    elif minutes > 0:
+                        duration_str = f"{minutes:02}:{seconds:02}"
+                    else:
+                        duration_str = f"{seconds} seconds"
+                body = f"**Title:** {content_info.title}\n\n**Duration:** {duration_str}\n\n**Size:** {size_str}"
             msgtype = message.MessageType.VIDEO
             media_info = VideoInfo(
                 mimetype=content_info.mimetype,
@@ -72,6 +107,19 @@ class DisplayHandler:
             )
         elif content_info.media_type == "image":
             self.log.info("Content being rendered as image")
+            if content_info.origin == "advanced-thumbnail-fallback":
+                if content_info.meta_duration:
+                    total_seconds = content_info.meta_duration
+                    hours = total_seconds // 3600
+                    minutes = (total_seconds % 3600) // 60
+                    seconds = total_seconds % 60
+                    if hours > 0:
+                        duration_str = f"{hours:02}:{minutes:02}:{seconds:02}"
+                    elif minutes > 0:
+                        duration_str = f"{minutes:02}:{seconds:02}"
+                    else:
+                        duration_str = f"{seconds} seconds"
+                body = f"**Title:** {content_info.title}\n\n**Duration:** {duration_str}\n\n**Platform:** {self.convert_extractor(content_info.extractor or "")}"
             msgtype = message.MessageType.IMAGE
             media_info = ImageInfo(
                 mimetype=content_info.mimetype,
@@ -94,9 +142,13 @@ class DisplayHandler:
             url=ContentURI(uri),
             filename=filename,
             info=media_info,
-            body=filename,
+            body=body or "",
         )
 
+        content.format = Format.HTML
+        content.body, content.formatted_body = await parse_formatted(
+            content.body, render_markdown=True, allow_html=True
+        )
         return content
 
     async def render(
@@ -110,7 +162,6 @@ class DisplayHandler:
                 content = await self._build_message_content(
                     processed_media=media_object
                 )
-
                 room_id = event.room_id
 
                 if reply:

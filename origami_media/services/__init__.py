@@ -1,5 +1,5 @@
 from .ffmpeg import Ffmpeg
 from .native import Native
-from .ytdlp import Ytdlp
+from .ytdlp import DownloadSizeExceededError, Ytdlp
 
-__all__ = ["Ffmpeg", "Native", "Ytdlp"]
+__all__ = ["Ffmpeg", "Native", "Ytdlp", "DownloadSizeExceededError"]
