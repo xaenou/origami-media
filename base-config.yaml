@@ -20,6 +20,7 @@ whitelist:
   - "tenor.com"
   - "unsplash.com"
   - "waifu.im"
+  - "workers.dev"
 
 ffmpeg:
   enable_livestream_previews: true
