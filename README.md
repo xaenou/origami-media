@@ -28,7 +28,7 @@ A basic overview of the current commands supported:
 - `!lexica [query]`: Download an image by querying Lexica. (Aliases: lex)
 - `!waifu`: Roll for a random Waifu. (Aliases: girl, g)
 
-Note: If passive url detection is enable it applies the get command to whitelisted urls.
+Note: If passive url detection is enabled it applies the get command to whitelisted urls.
 
 ## Dependencies
 
