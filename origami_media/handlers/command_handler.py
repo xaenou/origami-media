@@ -152,8 +152,11 @@ class CommandHandler:
         valid_urls, sanitized_message, should_censor = url_tuple
 
         if should_censor:
-            await self.display_handler.censor(
+            new_message_event_id = await self.display_handler.censor(
                 sanitized_message=sanitized_message, event=packet.event
+            )
+            packet.reaction_id = await self.client.react(
+                room_id=packet.event.room_id, event_id=new_message_event_id, key="🔄"
             )
 
         processed_media = await self.media_handler.process(

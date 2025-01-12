@@ -17,6 +17,7 @@ from mautrix.types.event.type import EventType
 
 if TYPE_CHECKING:
     from maubot.matrix import MaubotMatrixClient, MaubotMessageEvent
+    from mautrix.types import EventID
     from mautrix.util.logging.trace import TraceLogger
 
     from origami_media.main import Config
@@ -176,16 +177,19 @@ class DisplayHandler:
                 )
                 continue
 
-    async def censor(self, sanitized_message: str, event: "MaubotMessageEvent"):
+    async def censor(
+        self, sanitized_message: str, event: "MaubotMessageEvent"
+    ) -> "EventID":
         if " " in sanitized_message:
-            cleaned_content = "Tracking parameter(s) removed:\n\n" + sanitized_message
+            cleaned_content = f'Tracking parameter(s) removed:\n\n"{sanitized_message}"'
         else:
-            cleaned_content = "Tracking parameter(s) removed: " + sanitized_message
+            cleaned_content = "Link tracking parameter(s) removed: " + sanitized_message
         content = message.TextMessageEventContent(
             msgtype=message.MessageType.TEXT, body=cleaned_content
         )
         content.set_reply(event, disable_fallback=True)
         await event.redact(reason="Redacted for tracking URL(s).")
-        await self.client.send_message_event(
+        new_message_event_id = await self.client.send_message_event(
             room_id=event.room_id, event_type=EventType.ROOM_MESSAGE, content=content
         )
+        return new_message_event_id
