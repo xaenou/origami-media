@@ -16,8 +16,8 @@ class UrlHandler:
         self.config = config
         self.log = log
 
-    DETECT_YOUTUBE_TRACKERS = re.compile(
-        r"https?://(?:www\.)?(?:youtube\.com/(?:watch\?v=|shorts/)|youtu\.be/)([a-zA-Z0-9_-]+)(?:[?&]\S+)*",
+    DETECT_YOUTUBE_TRACKERS_SI = re.compile(
+        r"https?://(?:www\.)?(?:youtube\.com/(?:watch\?v=|shorts/)|youtu\.be/)([a-zA-Z0-9_-]+).*?\?si=([a-zA-Z0-9_-]+)",
         re.IGNORECASE,
     )
 
@@ -98,8 +98,7 @@ class UrlHandler:
 
         if self.config.meta.get(
             "censor_trackers", True
-        ) and self.DETECT_YOUTUBE_TRACKERS.search(message):
-            sanitized_message = "Tracking parameters removed:\n" + sanitized_message
+        ) and self.DETECT_YOUTUBE_TRACKERS_SI.search(message):
             for original, processed in url_mapping.items():
                 sanitized_message = sanitized_message.replace(original, processed)
                 should_censor = True
@@ -111,10 +110,6 @@ class UrlHandler:
         unique_valid_urls = list(dict.fromkeys(valid_urls))
 
         return unique_valid_urls, sanitized_message, should_censor
-
-    async def censor(self, sanitized_message, event):
-        await event.redact(reason="Redacted for tracking URL.")
-        await event.reply(content=sanitized_message)
 
     def process_string(self, message: str) -> list[str]:
         valid_urls = []

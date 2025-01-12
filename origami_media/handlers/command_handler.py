@@ -152,7 +152,7 @@ class CommandHandler:
         valid_urls, sanitized_message, should_censor = url_tuple
 
         if should_censor:
-            await self.url_handler.censor(
+            await self.display_handler.censor(
                 sanitized_message=sanitized_message, event=packet.event
             )
 

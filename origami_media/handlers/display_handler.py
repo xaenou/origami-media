@@ -32,7 +32,7 @@ class DisplayHandler:
         self.client = client
         self.config = config
 
-    def convert_extractor(self, key: str) -> str:
+    def _convert_extractor(self, key: str) -> str:
         SERVICES = {
             "youtube": "YouTube",
             "youtu": "YouTube",
@@ -73,16 +73,16 @@ class DisplayHandler:
             if content_info.origin == "advanced":
                 if content_info.size:
                     size_in_MB = content_info.size / (1024 * 1024)
-                    size_str = f"{size_in_MB:.2f} MB"
+                    size_str = f"{size_in_MB:.2f}MB"
                 if content_info.duration:
                     total_seconds = int(content_info.duration)
                     hours = total_seconds // 3600
                     minutes = (total_seconds % 3600) // 60
                     seconds = total_seconds % 60
                     if hours > 0:
-                        duration_str = f"{hours:02}:{minutes:02}:{seconds:02}"
+                        duration_str = f"{hours}:{minutes:02}:{seconds:02}"
                     elif minutes > 0:
-                        duration_str = f"{minutes:02}:{seconds:02}"
+                        duration_str = f"{minutes}:{seconds:02}"
                     else:
                         duration_str = f"{seconds} seconds"
                 body = f"**Title:** {content_info.title}\n\n**Duration:** {duration_str}\n\n**Size:** {size_str}"
@@ -114,12 +114,12 @@ class DisplayHandler:
                     minutes = (total_seconds % 3600) // 60
                     seconds = total_seconds % 60
                     if hours > 0:
-                        duration_str = f"{hours:02}:{minutes:02}:{seconds:02}"
+                        duration_str = f"{hours}:{minutes:02}:{seconds:02}"
                     elif minutes > 0:
-                        duration_str = f"{minutes:02}:{seconds:02}"
+                        duration_str = f"{minutes}:{seconds:02}"
                     else:
                         duration_str = f"{seconds} seconds"
-                body = f"**Title:** {content_info.title}\n\n**Duration:** {duration_str}\n\n**Platform:** {self.convert_extractor(content_info.extractor or "")}"
+                body = f"**Title:** {content_info.title}\n\n**Duration:** {duration_str}\n\n**Platform:** {self._convert_extractor(content_info.extractor or "")}"
             msgtype = message.MessageType.IMAGE
             media_info = ImageInfo(
                 mimetype=content_info.mimetype,
@@ -147,7 +147,7 @@ class DisplayHandler:
 
         content.format = Format.HTML
         content.body, content.formatted_body = await parse_formatted(
-            content.body, render_markdown=True, allow_html=True
+            content.body, render_markdown=True, allow_html=False
         )
         return content
 
@@ -162,16 +162,30 @@ class DisplayHandler:
                 content = await self._build_message_content(
                     processed_media=media_object
                 )
-                room_id = event.room_id
-
                 if reply:
                     content.set_reply(event, disable_fallback=True)
 
                 await self.client.send_message_event(
-                    room_id=room_id, event_type=EventType.ROOM_MESSAGE, content=content
+                    room_id=event.room_id,
+                    event_type=EventType.ROOM_MESSAGE,
+                    content=content,
                 )
             except Exception as e:
                 self.log.error(
                     f"MediaHandler.process: Unexpected error when trying to render {event.event_id}: {e}"
                 )
                 continue
+
+    async def censor(self, sanitized_message: str, event: "MaubotMessageEvent"):
+        cleaned_content = "**Tracking parameter(s) removed:**\n\n" + sanitized_message
+        content = message.TextMessageEventContent(
+            msgtype=message.MessageType.TEXT, body=cleaned_content
+        )
+        content.body, content.formatted_body = await parse_formatted(
+            content.body, render_markdown=True, allow_html=False
+        )
+        content.set_reply(event, disable_fallback=True)
+        await self.client.send_message_event(
+            room_id=event.room_id, event_type=EventType.ROOM_MESSAGE, content=content
+        )
+        await event.redact(reason="Redacted for tracking URL(s).")
