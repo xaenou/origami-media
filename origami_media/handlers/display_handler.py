@@ -147,7 +147,7 @@ class DisplayHandler:
 
         content.format = Format.HTML
         content.body, content.formatted_body = await parse_formatted(
-            content.body, render_markdown=True, allow_html=False
+            content.body, render_markdown=True, allow_html=True
         )
         return content
 
@@ -177,15 +177,15 @@ class DisplayHandler:
                 continue
 
     async def censor(self, sanitized_message: str, event: "MaubotMessageEvent"):
-        cleaned_content = "**Tracking parameter(s) removed:**\n\n" + sanitized_message
+        if " " in sanitized_message:
+            cleaned_content = "Tracking parameter(s) removed:\n\n" + sanitized_message
+        else:
+            cleaned_content = "Tracking parameter(s) removed: " + sanitized_message
         content = message.TextMessageEventContent(
             msgtype=message.MessageType.TEXT, body=cleaned_content
         )
-        content.body, content.formatted_body = await parse_formatted(
-            content.body, render_markdown=True, allow_html=False
-        )
         content.set_reply(event, disable_fallback=True)
+        await event.redact(reason="Redacted for tracking URL(s).")
         await self.client.send_message_event(
             room_id=event.room_id, event_type=EventType.ROOM_MESSAGE, content=content
         )
-        await event.redact(reason="Redacted for tracking URL(s).")
