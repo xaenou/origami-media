@@ -60,14 +60,15 @@ class UrlHandler:
 
     def process(
         self, event: "MaubotMessageEvent"
-    ) -> Optional[tuple[list[str], str, bool]]:
+    ) -> Optional[tuple[list[str], str, bool, bool]]:
         valid_urls = []
         message = str(event.content.body)
+        exceeds_url_limit = False
 
         urls = self._extract_urls(message)
         if len(urls) > self.config.queue.get("max_message_url_count", 3):
             self.log.warning("urls exceed message limit.")
-            return None
+            exceeds_url_limit = True
 
         if not urls:
             self.log.warning("No urls found in message.")
@@ -109,7 +110,7 @@ class UrlHandler:
 
         unique_valid_urls = list(dict.fromkeys(valid_urls))
 
-        return unique_valid_urls, sanitized_message, should_censor
+        return unique_valid_urls, sanitized_message, should_censor, exceeds_url_limit
 
     def process_string(self, message: str) -> list[str]:
         valid_urls = []

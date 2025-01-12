@@ -91,11 +91,22 @@ class CommandHandler:
         return preprocessed_packet
 
     async def _preprocess_url(self, packet: CommandPacket) -> Optional[CommandPacket]:
-        url_tuple = self.url_handler.process(packet.event)
-        if not url_tuple:
+        result = self.url_handler.process(packet.event)
+        if not result:
             return None
 
-        packet.data["url_tuple"] = url_tuple
+        valid_urls, sanitized_message, should_censor, exceeds_url_limit = result
+
+        if should_censor:
+            new_message_event_id = await self.display_handler.censor(
+                sanitized_message=sanitized_message, event=packet.event
+            )
+            packet.event.event_id = new_message_event_id
+
+        if exceeds_url_limit:
+            return None
+
+        packet.data["valid_urls"] = valid_urls
         packet.reaction_id = await packet.event.react("⏳")
         return packet
 
@@ -148,16 +159,7 @@ class CommandHandler:
     async def _process_url(self, packet: CommandPacket) -> None:
         packet.reaction_id = await packet.event.react("🔄")
 
-        url_tuple = packet.data["url_tuple"]
-        valid_urls, sanitized_message, should_censor = url_tuple
-
-        if should_censor:
-            new_message_event_id = await self.display_handler.censor(
-                sanitized_message=sanitized_message, event=packet.event
-            )
-            packet.reaction_id = await self.client.react(
-                room_id=packet.event.room_id, event_id=new_message_event_id, key="🔄"
-            )
+        valid_urls = packet.data["valid_urls"]
 
         processed_media = await self.media_handler.process(
             urls=valid_urls, modifier=packet.command.modifier
