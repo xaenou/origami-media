@@ -23,28 +23,17 @@ from origami_media.handlers import (
 class Config(BaseProxyConfig):
     def do_update(self, helper: ConfigUpdateHelper):
         helper.copy("meta")
-        helper.copy("whitelist")
-        helper.copy("ytdlp")
-        helper.copy("ffmpeg")
         helper.copy("file")
         helper.copy("queue")
         helper.copy("command")
+        helper.copy("ytdlp")
+        helper.copy("ffmpeg")
+        helper.copy("platforms")
+        helper.copy("platform_configs")
 
     @property
     def meta(self) -> Dict[str, Any]:
         return cast(Dict[str, Any], self.get("meta", {}))
-
-    @property
-    def whitelist(self) -> list[str]:
-        return cast(list[str], self.get("whitelist", []))
-
-    @property
-    def ytdlp(self) -> Dict[str, Any]:
-        return cast(Dict[str, Any], self.get("ytdlp", {}))
-
-    @property
-    def ffmpeg(self) -> Dict[str, Any]:
-        return cast(Dict[str, Any], self.get("ffmpeg", {}))
 
     @property
     def file(self) -> Dict[str, Any]:
@@ -57,6 +46,22 @@ class Config(BaseProxyConfig):
     @property
     def command(self) -> Dict[str, Any]:
         return cast(Dict[str, Any], self.get("command", {}))
+
+    @property
+    def ytdlp(self) -> Dict[str, Any]:
+        return cast(Dict[str, Any], self.get("ytdlp", {}))
+
+    @property
+    def ffmpeg(self) -> Dict[str, Any]:
+        return cast(Dict[str, Any], self.get("ffmpeg", {}))
+
+    @property
+    def platforms(self) -> list:
+        return cast(list, self.get("platforms", []))
+
+    @property
+    def platform_configs(self) -> Dict[str, Any]:
+        return cast(Dict[str, Any], self.get("platform_configs", {}))
 
 
 class OrigamiMedia(Plugin):

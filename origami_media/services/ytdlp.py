@@ -5,6 +5,7 @@ import json
 import shlex
 from io import BytesIO
 from typing import TYPE_CHECKING, List
+from urllib.parse import urlparse
 
 if TYPE_CHECKING:
     from mautrix.util.logging.trace import TraceLogger
@@ -31,20 +32,22 @@ class Ytdlp:
         if command_type not in ("query", "download"):
             raise ValueError("command_type must be 'query' or 'download'")
 
-        active_preset = self.config.ytdlp.get("active_preset")
+        domain = urlparse(url).netloc.lower()
+        config_key = None
+        for platform in self.config.platforms:
+            if platform["domain"] == domain:
+                config_key = platform["config_key"]
+                break
+        if not config_key:
+            raise ValueError(f"No config key set for {domain}")
 
-        if not active_preset:
-            raise ValueError("No active preset configured.")
+        platform_config: dict = self.config.platform_configs.get(config_key, {})
+        if not platform_config:
+            raise ValueError(f"Config for {domain} is empty")
 
-        presets = self.config.ytdlp.get("presets", [])
-        if not presets:
-            raise ValueError("No commands configured.")
-
-        active_formats = next(
-            (p["formats"] for p in presets if p["name"] == active_preset), None
-        )
-        if not active_formats:
-            raise ValueError(f"No formats found for preset '{active_preset}'.")
+        formats = platform_config.get("ytdlp_formats")
+        if not formats:
+            raise ValueError(f"No formats set for {domain}")
 
         result_commands = []
         escaped_url = shlex.quote(url)
@@ -52,41 +55,36 @@ class Ytdlp:
         output_arg = "-"
 
         proxy = ""
-        if self.config.meta.get("enable_proxy", False):
-            proxy_config = self.config.meta.get("proxy")
+        if platform_config.get("enable_proxy", False):
+            proxy_config = platform_config.get("proxy")
             if proxy_config:
                 proxy = f"--proxy '{proxy_config}'"
 
         user_agent = ""
-        if self.config.meta.get("enable_custom_user_agent"):
-            custom_user_agent = self.config.meta.get("custom_user_agent")
+        if platform_config.get("enable_custom_user_agent"):
+            custom_user_agent = platform_config.get("custom_user_agent")
             if custom_user_agent:
                 user_agent = f"--user-agent '{custom_user_agent}'"
 
         cookies = ""
-        if self.config.ytdlp.get("enable_cookies"):
-            cookies_dir = "/tmp/cookies.txt"
+        if platform_config.get("enable_cookies"):
+            cookies_dir = f"/tmp/{domain}-cookies.txt"
             if cookies_dir:
                 cookies = f"--cookies '{cookies_dir}'"
 
-        for format_entry in active_formats:
+        for format_entry in formats:
             if not format_entry:
-                self.log.warning(
-                    f"MediaProcessor.create_ytdlp_commands: Format missing in command {active_preset}"
-                )
-                continue
+                raise ValueError(f"Format missing for {domain}")
 
             if command_type == "query":
                 result_commands.append(
                     {
-                        "name": active_preset,
                         "command": f"yt-dlp -q --no-warnings {query_flags} {cookies} {user_agent} {proxy} -f '{format_entry}' {escaped_url}",
                     }
                 )
             else:
                 result_commands.append(
                     {
-                        "name": active_preset,
                         "command": f"yt-dlp -q --no-warnings {cookies} {user_agent} {proxy} -f '{format_entry}' -o '{output_arg}' {escaped_url}",
                     }
                 )
@@ -95,14 +93,13 @@ class Ytdlp:
 
     async def ytdlp_execute_query(self, commands: List[dict]) -> dict:
         for command_entry in commands:
-            name = command_entry.get("name", "Unnamed Command")
             command = command_entry.get("command")
 
             if not command:
-                self.log.warning(f"Skipping empty command entry: {name}")
+                self.log.warning("Skipping empty command entry.")
                 continue
 
-            self.log.info(f"Running yt-dlp command: {name} → {command}")
+            self.log.info(f"Running yt-dlp command → {command}")
 
             try:
                 process = await asyncio.create_subprocess_shell(
@@ -119,63 +116,60 @@ class Ytdlp:
                     error_message = (
                         stderr.decode().strip() or "No error message captured."
                     )
-                    self.log.warning(f"{name} failed: {error_message}")
+                    self.log.warning(f"failed: {error_message}")
 
                     if any(code in error_message for code in ["403"]):
                         self.log.error(
-                            f"{name}: Non-retryable error detected. Stopping retries."
+                            "Non-retryable error detected. Stopping retries."
                         )
                         break
 
                     raise Exception(
-                        f"{name}: Command failed with return code {process.returncode}."
+                        f"Command failed with return code {process.returncode}."
                     )
 
                 output = stdout.decode().strip()
                 if not output:
-                    self.log.warning(f"{name}: Command produced empty output.")
+                    self.log.warning("Command produced empty output.")
                     continue
 
                 return json.loads(output)
 
             except Exception as e:
-                self.log.exception(f"{name}: An error occurred: {e}")
-                raise Exception(f"{name}: {e}")
+                self.log.exception(f"An error occurred: {e}")
+                raise Exception(f"{e}")
 
             finally:
                 if process and process.returncode is None:
-                    self.log.warning(
-                        f"{name}: Process still running. Forcing termination."
-                    )
+                    self.log.warning("Process still running. Forcing termination.")
                     try:
                         process.kill()
                         await asyncio.wait_for(process.wait(), timeout=5)
                     except asyncio.TimeoutError:
                         self.log.error(
-                            f"{name}: Process termination timed out. Skipping cleanup."
+                            "Process termination timed out. Skipping cleanup."
                         )
                     except Exception as e:
                         self.log.exception(
-                            f"{name}: Unexpected error during process termination: {e}"
+                            "Unexpected error during process termination: {e}"
                         )
                     finally:
                         if process.returncode is None:
                             self.log.critical(
-                                f"{name}: Process is stuck and could not be terminated after multiple attempts."
+                                "Process is stuck and could not be terminated after multiple attempts."
                             )
 
         raise RuntimeError("No valid yt-dlp query command succeeded.")
 
     async def ytdlp_execute_download(self, commands: List[dict]) -> bytes:
         for command_entry in commands:
-            name = command_entry.get("name", "Unnamed Command")
             command = command_entry.get("command")
 
             if not command:
-                self.log.warning(f"Skipping empty download command: {name}")
+                self.log.warning("Skipping empty download command.")
                 continue
 
-            self.log.info(f"Executing yt-dlp download command: {name} → {command}")
+            self.log.info(f"Executing yt-dlp download command → {command}")
 
             process = None
             try:
@@ -188,7 +182,7 @@ class Ytdlp:
 
                 if not process.stdout:
                     raise Exception(
-                        f"{name}: Process stdout is None, cannot proceed with download."
+                        "Process stdout is None, cannot proceed with download."
                     )
 
                 video_data = BytesIO()
@@ -204,7 +198,9 @@ class Ytdlp:
                     total_size += chunk_size
 
                     if max_file_size > 0 and total_size > max_file_size:
-                        raise DownloadSizeExceededError(name, total_size, max_file_size)
+                        raise DownloadSizeExceededError(
+                            "name", total_size, max_file_size
+                        )
 
                     video_data.write(chunk)
 
@@ -214,20 +210,20 @@ class Ytdlp:
                     error_message = (
                         stderr.decode().strip() or "No error message captured."
                     )
-                    self.log.warning(f"{name} download failed: {error_message}")
+                    self.log.warning(f"download failed: {error_message}")
 
                     if any(code in error_message for code in ["403"]):
                         self.log.error(
-                            f"{name}: Non-retryable error detected. Stopping retries."
+                            "Non-retryable error detected. Stopping retries."
                         )
                         break
 
                     raise Exception(
-                        f"{name}: Download failed with return code {process.returncode}."
+                        f"Download failed with return code {process.returncode}."
                     )
 
                 if total_size == 0:
-                    self.log.warning(f"{name}: Downloaded data is empty.")
+                    self.log.warning("Downloaded data is empty.")
                     continue
 
                 video_data.seek(0)
@@ -237,29 +233,25 @@ class Ytdlp:
                 return video_data.getvalue()
 
             except Exception as e:
-                self.log.exception(f"{name}: An unexpected error occurred: {e}")
+                self.log.exception(f"An unexpected error occurred: {e}")
                 raise
 
             finally:
                 if process and process.returncode is None:
-                    self.log.warning(
-                        f"{name}: Process still running. Forcing termination."
-                    )
+                    self.log.warning("Process still running. Forcing termination.")
                     process.kill()
                     try:
                         await asyncio.wait_for(process.wait(), timeout=5)
                     except asyncio.TimeoutError:
-                        self.log.error(
-                            f"{name}: Process termination timed out. Moving on."
-                        )
+                        self.log.error("Process termination timed out. Moving on.")
                     except Exception as e:
                         self.log.exception(
-                            f"{name}: Unexpected error during process termination: {e}"
+                            f"Unexpected error during process termination: {e}"
                         )
                     finally:
                         if process.returncode is None:
                             self.log.critical(
-                                f"{name}: Process is stuck and could not be terminated."
+                                "Process is stuck and could not be terminated."
                             )
 
         raise RuntimeError("No valid yt-dlp download command succeeded.")

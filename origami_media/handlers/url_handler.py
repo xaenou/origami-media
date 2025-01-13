@@ -41,9 +41,11 @@ class UrlHandler:
         domain = urlparse(url).netloc.split(":")[0].split(".")[-2:]
         domain = ".".join(domain).lower()
 
-        if domain not in self.config.whitelist:
-            self.log.warning(f"Invalid or unwhitelisted domain: {domain}")
-            return None
+        if self.config.meta.get("use_platform_domains_as_whitelist", True):
+            whitelist = {platform["domain"] for platform in self.config.platforms}
+            if domain not in whitelist:
+                self.log.warning(f"Invalid or unwhitelisted domain: {domain}")
+                return None
 
         return domain
 
@@ -66,7 +68,7 @@ class UrlHandler:
         exceeds_url_limit = False
 
         urls = self._extract_urls(message)
-        if len(urls) > self.config.queue.get("max_message_url_count", 3):
+        if len(urls) > self.config.queue.get("max_message_url_count", 1):
             self.log.warning("urls exceed message limit.")
             exceeds_url_limit = True
 

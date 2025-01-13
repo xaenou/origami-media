@@ -153,16 +153,6 @@ class CommandHandler:
         if not self.config.meta.get("debug"):
             return
 
-        if packet.command.name == "write_cookies":
-            cookies = self.config.ytdlp.get("cookies_file")
-            result = self.native_controller.write_to_directory(
-                content=cookies, directory="/tmp", file_name="cookies.txt"
-            )
-            if not result:
-                await packet.event.respond("Cookies failed to write.")
-            else:
-                await packet.event.respond("Cookies written successfully.")
-
     async def _process_url(self, packet: CommandPacket) -> None:
         packet.reaction_id = await packet.event.react("🔄")
 

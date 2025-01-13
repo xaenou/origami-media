@@ -34,21 +34,21 @@ class MediaProcessor:
             log=self.log, config=self.config, http=self.http
         )
 
-    async def _handle_cookies(self) -> None:
-        if not self.config.ytdlp.get("enable_cookies"):
+    async def _handle_cookies(self, domain: str, platform_config: dict) -> None:
+        if not platform_config.get("enable_cookies"):
             self.log.info("Cookies are not enabled.")
             return
 
-        current_cookie_str = self.config.ytdlp.get("cookies_file")
-        cookie_file_path = "/tmp/cookies.txt"
+        current_cookie_str = platform_config.get("cookies_file")
+        cookie_file_path = f"/tmp/{domain}-cookies.txt"
 
         try:
             # Check if the file exists
             if self.native_controller.file_exists(
-                directory="/tmp", file_name="cookies.txt"
+                directory="/tmp", file_name=f"{domain}-cookies.txt"
             ):
                 previous_cookie_str = self.native_controller.read_from_file(
-                    directory="/tmp", file_name="cookies.txt"
+                    directory="/tmp", file_name=f"{domain}-cookies.txt"
                 )
 
                 # Update the file only if content differs
@@ -56,7 +56,7 @@ class MediaProcessor:
                     self.log.info("Updating cookies.txt as the content has changed.")
                     updated = self.native_controller.write_to_directory(
                         directory="/tmp",
-                        file_name="cookies.txt",
+                        file_name=f"{domain}-cookies.txt",
                         content=current_cookie_str,
                     )
                     if not updated:
@@ -69,7 +69,7 @@ class MediaProcessor:
                 self.log.info("cookies.txt not found. Writing new file.")
                 created = self.native_controller.write_to_directory(
                     directory="/tmp",
-                    file_name="cookies.txt",
+                    file_name=f"{domain}-cookies.txt",
                     content=current_cookie_str,
                 )
                 if not created:
@@ -101,10 +101,10 @@ class MediaProcessor:
             if type_ == "video":
                 if modifier == "force_audio_only":
                     data = await self.ffmpeg_controller.normalize_audio(data)
-                elif self.config.file.get("enable_normalize_videos_to_mp4"):
+                elif self.config.ffmpeg.get("enable_normalize_videos_to_mp4"):
                     data = await self.ffmpeg_controller.normalize_video(data)
             elif type_ == "audio":
-                if self.config.file.get("enable_normalize_audio_to_mp3"):
+                if self.config.ffmpeg.get("enable_normalize_audio_to_mp3"):
                     data = await self.ffmpeg_controller.normalize_audio(data)
 
             processed_data = data
@@ -344,18 +344,13 @@ class MediaProcessor:
         return self._create_media_object(data, metadata, ffmpeg_metadata)
 
     async def _primary_media_controller(
-        self, url: str, modifier=None
+        self,
+        url: str,
+        platform_config: dict,
+        modifier=None,
     ) -> Optional[MediaFile]:
-        skip_simple = {
-            "odysee",
-            "youtube",
-            "bitchute",
-            "rumble",
-            "twitter",
-            "x.com",
-            "youtu",
-        }
-        should_skip = any(service in url.lower() for service in skip_simple)
+
+        should_skip = platform_config.get("force_ytdlp", False)
         self.log.info(
             f"entering primary media controller, should skip simple download: {should_skip}"
         )
@@ -433,10 +428,25 @@ class MediaProcessor:
         return None
 
     async def process_url(self, url: str, modifier=None) -> Optional[Media]:
-        await self._handle_cookies()
+        domain = urlparse(url).netloc.lower()
+        config_key = None
+        for platform in self.config.platforms:
+            if platform["domain"] == domain:
+                config_key = platform["config_key"]
+                break
+        if not config_key:
+            self.log.warning(f"No config key set for {domain}")
+            return None
+
+        platform_config: dict = self.config.platform_configs.get(config_key, {})
+        if not platform_config:
+            self.log.warning(f"Config for {domain} is empty")
+            return None
+
+        await self._handle_cookies(domain=domain, platform_config=platform_config)
 
         primary_file_object = await self._primary_media_controller(
-            url, modifier=modifier
+            url, platform_config=platform_config, modifier=modifier
         )
         if not primary_file_object:
             self.log.warning("Failed to process primary media.")
