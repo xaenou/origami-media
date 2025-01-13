@@ -156,3 +156,7 @@ class Native:
         except Exception as e:
             self.log.info(f"python: An error occurred: {e}")
             raise e
+
+    def file_exists(self, directory: str, file_name: str) -> bool:
+        file_path = os.path.join(directory, file_name)
+        return os.path.isfile(file_path)

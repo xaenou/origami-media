@@ -34,6 +34,55 @@ class MediaProcessor:
             log=self.log, config=self.config, http=self.http
         )
 
+    async def _handle_cookies(self) -> bool:
+        if not self.config.ytdlp.get("enable_cookies"):
+            return False
+
+        current_cookie_str = self.config.ytdlp.get("cookies_file")
+        cookie_file_path = "/tmp/cookies.txt"
+
+        try:
+            # Check if the file exists
+            if self.native_controller.file_exists(
+                directory="/tmp", file_name="cookies.txt"
+            ):
+                previous_cookie_str = self.native_controller.read_from_file(
+                    directory="/tmp", file_name="cookies.txt"
+                )
+
+                # Update the file only if content differs
+                if previous_cookie_str != current_cookie_str:
+                    self.log.info("Updating cookies.txt as the content has changed.")
+                    updated = self.native_controller.write_to_directory(
+                        directory="/tmp",
+                        file_name="cookies.txt",
+                        content=current_cookie_str,
+                    )
+                    if not updated:
+                        self.log.error("Failed to update cookies.txt.")
+                        return False
+                    self.log.info("cookies.txt updated successfully.")
+                    return True
+            else:
+                # Write new cookies file if it doesn't exist
+                self.log.info("cookies.txt not found. Writing new file.")
+                created = self.native_controller.write_to_directory(
+                    directory="/tmp",
+                    file_name="cookies.txt",
+                    content=current_cookie_str,
+                )
+                if not created:
+                    self.log.error("Failed to write cookies.txt.")
+                    return False
+                self.log.info("cookies.txt written successfully.")
+                return True
+
+        except Exception as e:
+            self.log.error(f"An error occurred while handling cookies: {e}")
+            return False
+
+        return False
+
     async def _attempt_thumbnail_fallback(
         self, ytdlp_metadata: dict
     ) -> Optional[bytes]:
@@ -386,6 +435,9 @@ class MediaProcessor:
         return None
 
     async def process_url(self, url: str, modifier=None) -> Optional[Media]:
+        cookies_state = await self._handle_cookies()
+        if not cookies_state:
+            self.log.info("Cookies are not being used.")
 
         primary_file_object = await self._primary_media_controller(
             url, modifier=modifier
