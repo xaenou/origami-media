@@ -67,8 +67,6 @@ platform_configs:
     custom_user_agent: "PLACEHOLDER"
     force_ytdlp: true
     ytdlp_formats:
-      - "bestvideo[height<=720]+bestaudio/best[height<=720]"
-      - "bestvideo[height<=1080]+bestaudio/best[height<=1080]"
       - "worst"
     cookies_file: |
 
@@ -80,8 +78,6 @@ platform_configs:
     custom_user_agent: "PLACEHOLDER"
     force_ytdlp: true
     ytdlp_formats:
-      - "bestvideo[height<=720]+bestaudio/best[height<=720]"
-      - "bestvideo[height<=1080]+bestaudio/best[height<=1080]"
       - "worst"
     cookies_file: |
 
