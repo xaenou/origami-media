@@ -78,8 +78,8 @@ BASE_COMMANDS = {
         type=CommandType.DEBUG,
         description="N/A",
     ),
-    "cookies": Command(
-        name="cookies",
+    "write_cookies": Command(
+        name="write_cookies",
         type=CommandType.DEBUG,
         description="Set cookies from config.",
     ),

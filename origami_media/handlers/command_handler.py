@@ -153,7 +153,7 @@ class CommandHandler:
         if not self.config.meta.get("debug"):
             return
 
-        if packet.command.name == "cookies":
+        if packet.command.name == "write_cookies":
             cookies = self.config.ytdlp.get("cookies_file")
             result = self.native_controller.write_to_directory(
                 content=cookies, directory="/tmp", file_name="cookies.txt"
