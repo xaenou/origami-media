@@ -24,7 +24,7 @@ Here are some of the current features available:
 - **Dynamic Thumbnail Generation**    
   Thumbnails can be automatically created for media that lacks them.
 - **Livestream Previews**  
-  Livestreams can be detected and handled by generating a preview of it via ffmpeg. The duration of the preview can be configured
+  Livestreams can be detected and handled by generating a preview of it via ffmpeg. The duration of the preview can be configured.
 - **Batch Processing**   
   Automatically process multiple URLs detected in a single post. Can be disabled.
 - **Configurable Constraints**  
