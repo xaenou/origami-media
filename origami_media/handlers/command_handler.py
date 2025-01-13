@@ -123,6 +123,11 @@ class CommandHandler:
                 ):
                     continue
 
+                if command == "get" and self.config.meta.get(
+                    "enable_passive_url_detection"
+                ):
+                    continue
+
                 description = details.description
                 aliases = [
                     alias for alias, target in ALIASES.items() if target == command
@@ -135,6 +140,8 @@ class CommandHandler:
                     arg_text = "[query]"
                 elif details.type == CommandType.URL:
                     arg_text = "[url]"
+                elif details.type == CommandType.DEBUG:
+                    arg_text = "[DEBUG]"
                 else:
                     arg_text = ""
 
