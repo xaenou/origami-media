@@ -123,10 +123,15 @@ class MediaProcessor:
             self._handle_download_error(error_message)
             return None
 
-    async def _query_advanced_media(self, url) -> Optional[Dict]:
+    async def _query_advanced_media(
+        self, url, domain: str, platform_config: dict
+    ) -> Optional[Dict]:
         try:
             query_commands = self.ytdlp_controller.create_ytdlp_commands(
-                url, command_type="query"
+                url,
+                command_type="query",
+                domain=domain,
+                platform_config=platform_config,
             )
 
             ytdlp_metadata = await self.ytdlp_controller.ytdlp_execute_query(
@@ -140,7 +145,7 @@ class MediaProcessor:
             return None
 
     async def _download_advanced_media(
-        self, ytdlp_metadata: dict
+        self, ytdlp_metadata: dict, platform_config: dict, domain: str
     ) -> Tuple[Optional[bytes], bool]:
         # The bool is if the thumbnail fallback was used.
         try:
@@ -186,7 +191,10 @@ class MediaProcessor:
             try:
                 data = await self.ytdlp_controller.ytdlp_execute_download(
                     commands=self.ytdlp_controller.create_ytdlp_commands(
-                        ytdlp_metadata["url"], command_type="download"
+                        ytdlp_metadata["url"],
+                        command_type="download",
+                        domain=domain,
+                        platform_config=platform_config,
                     )
                 )
                 is_thumbnail_fallback = False
@@ -346,6 +354,7 @@ class MediaProcessor:
     async def _primary_media_controller(
         self,
         url: str,
+        domain: str,
         platform_config: dict,
         modifier=None,
     ) -> Optional[MediaFile]:
@@ -365,10 +374,14 @@ class MediaProcessor:
                         data, ffmpeg_metadata=metadata, url=url
                     )
 
-        ytdlp_metadata = await self._query_advanced_media(url)
+        ytdlp_metadata = await self._query_advanced_media(
+            url, domain=domain, platform_config=platform_config
+        )
         if ytdlp_metadata:
             data, _is_thumbnail_fallback = await self._download_advanced_media(
-                ytdlp_metadata=ytdlp_metadata
+                ytdlp_metadata=ytdlp_metadata,
+                domain=domain,
+                platform_config=platform_config,
             )
             if data:
                 result = await self._post_process(data, modifier=modifier)
@@ -428,7 +441,8 @@ class MediaProcessor:
         return None
 
     async def process_url(self, url: str, modifier=None) -> Optional[Media]:
-        domain = urlparse(url).netloc.lower()
+        domain = urlparse(url).netloc.split(":")[0].split(".")[-2:]
+        domain = ".".join(domain).lower()
         config_key = None
         for platform in self.config.platforms:
             if platform["domain"] == domain:
@@ -446,7 +460,7 @@ class MediaProcessor:
         await self._handle_cookies(domain=domain, platform_config=platform_config)
 
         primary_file_object = await self._primary_media_controller(
-            url, platform_config=platform_config, modifier=modifier
+            url, platform_config=platform_config, modifier=modifier, domain=domain
         )
         if not primary_file_object:
             self.log.warning("Failed to process primary media.")

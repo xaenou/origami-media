@@ -28,22 +28,11 @@ class Ytdlp:
         self.config = config
         self.log = log
 
-    def create_ytdlp_commands(self, url: str, command_type: str) -> List[dict]:
+    def create_ytdlp_commands(
+        self, url: str, command_type: str, domain: str, platform_config: dict
+    ) -> List[dict]:
         if command_type not in ("query", "download"):
             raise ValueError("command_type must be 'query' or 'download'")
-
-        domain = urlparse(url).netloc.lower()
-        config_key = None
-        for platform in self.config.platforms:
-            if platform["domain"] == domain:
-                config_key = platform["config_key"]
-                break
-        if not config_key:
-            raise ValueError(f"No config key set for {domain}")
-
-        platform_config: dict = self.config.platform_configs.get(config_key, {})
-        if not platform_config:
-            raise ValueError(f"Config for {domain} is empty")
 
         formats = platform_config.get("ytdlp_formats")
         if not formats:
