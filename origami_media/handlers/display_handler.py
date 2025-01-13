@@ -37,7 +37,7 @@ class DisplayHandler:
         SERVICES = {
             "youtube": "YouTube",
             "youtu": "YouTube",
-            "twitter": "Twitter",
+            "twitter": "X",
             "x": "X",
             "rumble": "Rumble",
             "odysee": "Odysee",
@@ -182,10 +182,10 @@ class DisplayHandler:
     ) -> "EventID":
         if " " in sanitized_message:
             cleaned_content = (
-                f'Link tracking parameter(s) removed:\n\n"{sanitized_message}"'
+                f'Link tracking parameter(s) removed: "{sanitized_message}"'
             )
         else:
-            cleaned_content = "Tracking parameter(s) removed: " + sanitized_message
+            cleaned_content = f'Tracking parameter(s) removed: "{sanitized_message}"'
         content = message.TextMessageEventContent(
             msgtype=message.MessageType.TEXT, body=cleaned_content
         )
