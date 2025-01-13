@@ -4,19 +4,22 @@ The purpose of this maubot plugin is to process and display media for matrix ser
 
 ## Features
 
-A brief list of some of the current features:
-- Dynamic thumbnail generation
-- Configurable concurrency
-- An event queue
-- Batch processing
-- File size constraints
-- Custom command prefixes
-- Configurable cookies, proxies, custom user agents, preferred format, and fallback formats for ytdlp per platform
-- Livestream previews via ffmpeg
-- Censor tracking links posted by users
-- Media standardization (e.g. webms can be auto converted to mp4s)
+Here are some of the current features:
 
-and more, all configurable in real time via the maubot manager dashboard.
+- **Dynamic Thumbnail Generation**: Thumbnails can be automatically generated for media that lacks them.  
+- **Configurable Concurrency**: Concurrency levels at various stages of the pipeline can be tweaked depending on your server's demands and resources.  
+- **Event Queue**: Validated commands can be buffered for processing to prevent overwhelming the server. Works hand-in-hand with the concurrency.  
+- **Batch Processing**: If multiple urls are detected in a single post, they can all be processed.
+- **UX & Accessibility**: Everything looks good and works just as well for different matrix clients. Helpful reactions appear to let users know that the bot is processing their requests. 
+- **Various Constraints**: Set limits on file sizes in and out of memory, video duration limits, and more to manage your server's resources.  
+- **Custom Command Prefixes**: You don't have to use `!`.  
+- **Advanced YTDLP Configuration**: Configure cookies, proxies, user agents, preferred formats, and fallback formats for any platform you decide to add.  
+- **Livestream Previews**: Generate previews for live streams via FFmpeg. The duration of the preview can be set. 
+- **Link Censorship and Sanitization**: Automatically censor and sanitize tracking links posted by users.  
+- **Media Standardization**: Convert media (e.g., WebM files to MP4) automatically for compatibility between different clients.  
+- **Configurable Whitelist**: Set up a customizable whitelist for specific use cases.  
+
+...and more! All features are configurable in real time through the **Maubot Manager Dashboard** by editing the assigned instance's `base-config.yaml`.
 
 ## Commands
 
@@ -29,7 +32,7 @@ A basic overview of the current commands supported:
 - `!lexica [query]`: Download an image by querying Lexica. (Aliases: lex)
 - `!waifu`: Roll for a random Waifu. (Aliases: girl, g)
 
-Note: If passive url detection is enabled it applies the get command to whitelisted urls, and the get command will no longer appear in !help.
+**Note**: If passive URL detection is enabled, incoming messages are parsed for URLs and the `get` command is applied to them.
 
 ## Dependencies
 
