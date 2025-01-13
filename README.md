@@ -11,7 +11,7 @@ A brief list of some of the current features:
 - Batch processing
 - File size constraints
 - Custom command prefixes
-- Cookies, proxies, custom user agents, preferred format, and fallback formats for ytdlp
+- Configurable cookies, proxies, custom user agents, preferred format, and fallback formats for ytdlp per platform
 - Livestream previews via ffmpeg
 - Censor tracking links posted by users
 - Media standardization (e.g. webms can be auto converted to mp4s)
@@ -29,7 +29,8 @@ A basic overview of the current commands supported:
 - `!lexica [query]`: Download an image by querying Lexica. (Aliases: lex)
 - `!waifu`: Roll for a random Waifu. (Aliases: girl, g)
 
-Note: If passive url detection is enabled it applies the get command to whitelisted urls.
+Note: If passive url detection is enabled it applies the get command to whitelisted urls, and the get command will no longer appear in !help.
+Note: If debug mode is enabled, additional commands may appear.
 
 ## Dependencies
 
