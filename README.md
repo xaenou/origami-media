@@ -30,7 +30,6 @@ A basic overview of the current commands supported:
 - `!waifu`: Roll for a random Waifu. (Aliases: girl, g)
 
 Note: If passive url detection is enabled it applies the get command to whitelisted urls, and the get command will no longer appear in !help.
-Note: If debug mode is enabled, additional commands may appear.
 
 ## Dependencies
 
