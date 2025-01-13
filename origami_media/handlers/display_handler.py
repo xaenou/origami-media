@@ -148,7 +148,7 @@ class DisplayHandler:
 
         content.format = Format.HTML
         content.body, content.formatted_body = await parse_formatted(
-            content.body, render_markdown=True, allow_html=True
+            content.body, render_markdown=True, allow_html=False
         )
         return content
 
@@ -188,6 +188,10 @@ class DisplayHandler:
             cleaned_content = "Tracking parameter(s) removed: " + sanitized_message
         content = message.TextMessageEventContent(
             msgtype=message.MessageType.TEXT, body=cleaned_content
+        )
+        content.format = Format.HTML
+        content.body, content.formatted_body = await parse_formatted(
+            content.body, render_markdown=True, allow_html=False
         )
         content.set_reply(event, disable_fallback=True)
         await event.redact(reason="Redacted for tracking URL(s).")
