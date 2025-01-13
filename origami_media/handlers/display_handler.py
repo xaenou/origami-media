@@ -181,9 +181,7 @@ class DisplayHandler:
         self, sanitized_message: str, event: "MaubotMessageEvent"
     ) -> "EventID":
         if " " in sanitized_message:
-            cleaned_content = (
-                f'Link tracking parameter(s) removed: "{sanitized_message}"'
-            )
+            cleaned_content = f"Link tracking parameter(s) removed: {sanitized_message}"
         else:
             cleaned_content = f'Tracking parameter(s) removed: "{sanitized_message}"'
         content = message.TextMessageEventContent(
