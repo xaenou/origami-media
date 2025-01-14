@@ -43,6 +43,40 @@ class QueryHandler:
                 link = gif["url"]
             return link
 
+        if provider == "giphy":
+            rating = "r"
+            if not query:
+                endpoint = "random"
+                url_params = urllib.parse.urlencode(
+                    {"api_key": api_key, "rating": rating}
+                )
+            else:
+                endpoint = "search"
+                url_params = urllib.parse.urlencode(
+                    {"q": query, "api_key": api_key, "rating": rating}
+                )
+            self.log.info(f"Giphy:{endpoint} Query: {query} ")
+            base_url = f"https://api.giphy.com/v1/gifs/{endpoint}?{url_params}"
+
+            async with self.http.get(base_url) as response:
+                data = await response.json()
+                if endpoint == "random" or endpoint == "translate":
+                    result = data.get("data")
+                elif endpoint == "search":
+                    results = data.get("data", [])
+                    if not results:
+                        return None
+                    result = random.choice(results)
+                else:
+                    return None
+
+                if not result or (endpoint != "random" and "images" not in result):
+                    return None
+
+                gif = result["images"]["original"] if "images" in result else result
+                link = gif["url"]
+            return link
+
         if provider == "unsplash":
             url_params = urllib.parse.urlencode({"query": query, "client_id": api_key})
             base_url = f"https://api.unsplash.com/search/photos?{url_params}"
@@ -91,13 +125,17 @@ class QueryHandler:
         query: str,
         provider: str,
     ) -> str:
+        query_api_dict: dict = self.config.command["query_image"]
+        if "|" in provider:
+            split_providers = provider.split("|")
+        else:
+            split_providers = [provider]
 
-        api_key = None
-        if provider in ["tenor", "unsplash"]:
-            api_key = self.config.command["query_image"][f"{provider}_api_key"]
+        for p in split_providers:
+            api_key = query_api_dict.get(f"{p}_api_key", None)
 
-        url = await self._query_image(query=query, provider=provider, api_key=api_key)
-        if not url:
-            raise Exception("No url was obtained.")
+            url = await self._query_image(query=query, provider=p, api_key=api_key)
+            if url:
+                return url
 
-        return url
+        raise Exception("No URL was obtained from any provider.")

@@ -49,6 +49,18 @@ BASE_COMMANDS = {
         description="Download audio only for a url.",
         modifier="force_audio_only",
     ),
+    "gif": Command(
+        name="gif",
+        type=CommandType.QUERY,
+        description="Download a gif by supplying a query.",
+        modifier="giphy|tenor",
+    ),
+    "giphy": Command(
+        name="giphy",
+        type=CommandType.QUERY,
+        description="Download a gif by querying giphy.",
+        modifier="giphy",
+    ),
     "tenor": Command(
         name="tenor",
         type=CommandType.QUERY,
@@ -81,12 +93,10 @@ BASE_COMMANDS = {
 }
 
 ALIASES = {
-    "gif": "tenor",
-    "img": "unsplash",
-    "lex": "lexica",
-    "girl": "waifu",
-    "g": "waifu",
     "mp3": "audio",
+    "stock": "unsplash",
+    "lex": "lexica",
+    "g": "waifu",
 }
 
 

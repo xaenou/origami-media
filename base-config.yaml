@@ -20,6 +20,7 @@ command:
   command_prefix: "!"
   query_image:
     tenor_api_key: "SECRET"
+    giphy_api_key: "SECRET"
     unsplash_api_key: "SECRET"
 
 ytdlp:
@@ -47,9 +48,13 @@ platforms:
     config_key: "generic1"
   - domain: "bitchute.com"
     config_key: "generic1"
+  - domain: "catbox.moe"
+    config_key: "generic2"
   - domain: "4cdn.org"
     config_key: "generic2"
   - domain: "tenor.com"
+    config_key: "generic2"
+  - domain: "giphy.com"
     config_key: "generic2"
   - domain: "unsplash.com"
     config_key: "generic2"
