@@ -152,7 +152,7 @@ class DisplayHandler:
         )
         return content
 
-    async def render(
+    async def render_media(
         self,
         media: list["ProcessedMedia"],
         event: "MaubotMessageEvent",
@@ -176,6 +176,24 @@ class DisplayHandler:
                     f"MediaHandler.process: Unexpected error when trying to render {event.event_id}: {e}"
                 )
                 continue
+
+    async def render_text(
+        self, message_: str, event: "MaubotMessageEvent", reply: bool = False
+    ) -> "EventID":
+        content = message.TextMessageEventContent(
+            msgtype=message.MessageType.TEXT, body=message_
+        )
+        content.format = Format.HTML
+        content.body, content.formatted_body = await parse_formatted(
+            content.body, render_markdown=True, allow_html=False
+        )
+        if reply:
+            content.set_reply(event, disable_fallback=True)
+
+        new_message_event_id = await self.client.send_message_event(
+            room_id=event.room_id, event_type=EventType.ROOM_MESSAGE, content=content
+        )
+        return new_message_event_id
 
     async def censor(
         self, sanitized_message: str, event: "MaubotMessageEvent"

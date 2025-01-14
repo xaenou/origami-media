@@ -132,7 +132,11 @@ class CommandHandler:
                 aliases = [
                     alias for alias, target in ALIASES.items() if target == command
                 ]
-                alias_text = f" (Aliases: {', '.join(aliases)})" if aliases else ""
+                if aliases:
+                    command_prefix = self.config.command.get("command_prefix")
+                    alias_text = f" (Aliases: {', '.join(f'`{command_prefix}{alias}`' for alias in aliases)})"
+                else:
+                    alias_text = ""
 
                 if command == "waifu":
                     arg_text = ""
@@ -145,9 +149,11 @@ class CommandHandler:
                 else:
                     arg_text = ""
 
-                help_message += f"- `{self.config.command.get("command_prefix")}{command} {arg_text}`: {description}{alias_text}\n"
+                help_message += f"- `{self.config.command.get('command_prefix')}{command} {arg_text}`: {description}{alias_text}\n"
 
-            await packet.event.respond(help_message)
+            _ = await self.display_handler.render_text(
+                message_=help_message, event=packet.event
+            )
 
     async def _preprocess_debug(self, packet: CommandPacket) -> None:
         if not self.config.meta.get("debug"):
@@ -168,7 +174,9 @@ class CommandHandler:
             )
             packet.reaction_id = None
 
-        await self.display_handler.render(media=processed_media, event=packet.event)
+        await self.display_handler.render_media(
+            media=processed_media, event=packet.event
+        )
 
     async def _process_query(self, packet: CommandPacket) -> None:
         packet.reaction_id = await packet.event.react("🔄")
@@ -191,6 +199,6 @@ class CommandHandler:
             )
             packet.reaction_id = None
 
-        await self.display_handler.render(
+        await self.display_handler.render_media(
             media=processed_media, event=packet.event, reply=False
         )
