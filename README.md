@@ -1,6 +1,6 @@
 # Origami Media
 
-The purpose of this maubot plugin is to process and display media for matrix servers when a valid url is detected or when the appropriate command is invoked.
+The purpose of this maubot plugin is to process and display media for matrix servers when a valid URL is detected or when the appropriate command is invoked.
 
 ## Commands
 
