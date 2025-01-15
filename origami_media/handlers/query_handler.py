@@ -19,8 +19,21 @@ class QueryHandler:
         self.http = http
 
     async def _query_image(
-        self, query: str, provider: str, api_key: Optional[str] = None
+        self,
+        query: str,
+        provider: str,
+        api_key: Optional[str] = None,
     ) -> Optional[str]:
+        async def fetch_url(url, headers=None):
+            proxy = None
+            if self.config.command["query_image"]["enable_proxy"]:
+                proxy = self.config.command["query_image"].get("proxy")
+            async with self.http.get(url, proxy=proxy, headers=headers) as response:
+                self.log.info(f"Response status: {response.status}")
+                if response.status != 200:
+                    self.log.error(f"Failed request to {url}: {await response.text()}")
+                    return None
+                return await response.json()
 
         if provider == "tenor":
             rating = "off"
@@ -29,19 +42,19 @@ class QueryHandler:
                 {"q": query, "key": api_key, "contentfilter": rating}
             )
             base_url = f"https://g.tenor.com/{api_version}/search?{url_params}"
-            async with self.http.get(base_url) as response:
-                data = await response.json()
-                results = data.get("results", [])
-                if not results:
-                    return None
-                result = random.choice(results)
-                gif = (
-                    result["media_formats"]["gif"]
-                    if api_version == "v2"
-                    else result["media"][0]["gif"]
-                )
-                link = gif["url"]
-            return link
+            data = await fetch_url(base_url)
+            if not data:
+                return None
+            results = data.get("results", [])
+            if not results:
+                return None
+            result = random.choice(results)
+            gif = (
+                result["media_formats"]["gif"]
+                if api_version == "v2"
+                else result["media"][0]["gif"]
+            )
+            return gif["url"]
 
         if provider == "giphy":
             rating = "r"
@@ -57,49 +70,46 @@ class QueryHandler:
                 )
             self.log.info(f"Giphy:{endpoint} Query: {query} ")
             base_url = f"https://api.giphy.com/v1/gifs/{endpoint}?{url_params}"
-
-            async with self.http.get(base_url) as response:
-                data = await response.json()
-                if endpoint == "random" or endpoint == "translate":
-                    result = data.get("data")
-                elif endpoint == "search":
-                    results = data.get("data", [])
-                    if not results:
-                        return None
-                    result = random.choice(results)
-                else:
+            data = await fetch_url(base_url)
+            if not data:
+                return None
+            if endpoint == "random" or endpoint == "translate":
+                result = data.get("data")
+            elif endpoint == "search":
+                results = data.get("data", [])
+                if not results:
                     return None
-
-                if not result or (endpoint != "random" and "images" not in result):
-                    return None
-
-                gif = result["images"]["original"] if "images" in result else result
-                link = gif["url"]
-            return link
+                result = random.choice(results)
+            else:
+                return None
+            if not result or (endpoint != "random" and "images" not in result):
+                return None
+            gif = result["images"]["original"] if "images" in result else result
+            return gif["url"]
 
         if provider == "unsplash":
             url_params = urllib.parse.urlencode({"query": query, "client_id": api_key})
             base_url = f"https://api.unsplash.com/search/photos?{url_params}"
-            async with self.http.get(base_url) as response:
-                data = await response.json()
-                results = data.get("results", [])
-                if not results:
-                    return None
-                result = random.choice(results)
-                link = result["urls"]["regular"]
-            return link
+            data = await fetch_url(base_url)
+            if not data:
+                return None
+            results = data.get("results", [])
+            if not results:
+                return None
+            result = random.choice(results)
+            return result["urls"]["regular"]
 
         if provider == "lexica":
             url_params = urllib.parse.urlencode({"q": query})
             base_url = f"https://lexica.art/api/v1/search?{url_params}"
-            async with self.http.get(base_url) as response:
-                data = await response.json()
-                results = data.get("images", [])
-                if not results:
-                    return None
-                result = random.choice(results)
-                link = result["src"]
-            return link
+            data = await fetch_url(base_url)
+            if not data:
+                return None
+            results = data.get("images", [])
+            if not results:
+                return None
+            result = random.choice(results)
+            return result["src"]
 
         if provider == "waifu":
             url_params = urllib.parse.urlencode(
@@ -108,29 +118,29 @@ class QueryHandler:
                 }
             )
             base_url = f"https://api.waifu.im/search?{url_params}"
-            async with self.http.get(base_url) as response:
-                data = await response.json()
-                results = data.get("images", [])
-                if not results:
-                    return None
-                result = random.choice(results)
-                link = result.get("url")
-            return link
+            data = await fetch_url(base_url)
+            if not data:
+                return None
+            results = data.get("images", [])
+            if not results:
+                return None
+            result = random.choice(results)
+            return result.get("url")
 
         if provider == "searx":
-            searx_url = api_key
             url_params = urllib.parse.urlencode(
                 {"q": query, "format": "json", "category_images": 1}
             )
-            base_url = f"{searx_url}?{url_params}"
-            async with self.http.get(base_url) as response:
-                data = await response.json()
-                results = data.get("results", [])
-                if not results:
-                    return None
-                result = random.choice(results)
-                link = result.get("img_src")
-            return link
+            base_url = f"{api_key}?{url_params}"
+            headers = {"User-Agent": "Mozilla/5.0"}
+            data = await fetch_url(base_url, headers=headers)
+            if not data:
+                return None
+            results = data.get("results", [])
+            if not results:
+                return None
+            result = random.choice(results)
+            return result.get("img_src")
 
         self.log.error(f"Unsupported provider: {provider}")
         return None

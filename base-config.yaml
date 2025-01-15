@@ -19,6 +19,8 @@ queue:
 command:
   command_prefix: "!"
   query_image:
+    enable_proxy: false
+    proxy: "SECRET" # Must be http proxy
     tenor_api_key: "SECRET"
     giphy_api_key: "SECRET"
     unsplash_api_key: "SECRET"
