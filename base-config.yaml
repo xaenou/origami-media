@@ -22,6 +22,7 @@ command:
     tenor_api_key: "SECRET"
     giphy_api_key: "SECRET"
     unsplash_api_key: "SECRET"
+    searx_instance: "https://<your-searx-instance>/search"
 
 ytdlp:
   enable_thumbnail_fallback_if_duration_or_size_exceeds: true

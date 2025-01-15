@@ -67,6 +67,12 @@ BASE_COMMANDS = {
         description="Search for a GIF on Tenor.",
         modifier="tenor",
     ),
+    "img": Command(
+        name="img",
+        type=CommandType.QUERY,
+        description="Search the web for an image.",
+        modifier="searx",
+    ),
     "unsplash": Command(
         name="unsplash",
         type=CommandType.QUERY,

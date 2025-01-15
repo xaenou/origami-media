@@ -117,6 +117,21 @@ class QueryHandler:
                 link = result.get("url")
             return link
 
+        if provider == "searx":
+            searx_url = api_key
+            url_params = urllib.parse.urlencode(
+                {"q": query, "format": "json", "category_images": 1}
+            )
+            base_url = f"{searx_url}?{url_params}"
+            async with self.http.get(base_url) as response:
+                data = await response.json()
+                results = data.get("results", [])
+                if not results:
+                    return None
+                result = random.choice(results)
+                link = result.get("img_src")
+            return link
+
         self.log.error(f"Unsupported provider: {provider}")
         return None
 
@@ -126,15 +141,26 @@ class QueryHandler:
         provider: str,
     ) -> str:
         query_api_dict: dict = self.config.command["query_image"]
+
         if "|" in provider:
             split_providers = provider.split("|")
         else:
             split_providers = [provider]
 
         for p in split_providers:
-            api_key = query_api_dict.get(f"{p}_api_key", None)
+            if p == "searx":
+                searx_instance_url = query_api_dict.get("searx_instance")
+                if not searx_instance_url:
+                    self.log.error("No Searx instance URL configured.")
+                    continue
 
-            url = await self._query_image(query=query, provider=p, api_key=api_key)
+                url = await self._query_image(
+                    query=query, provider=p, api_key=searx_instance_url
+                )
+            else:
+                api_key = query_api_dict.get(f"{p}_api_key", None)
+                url = await self._query_image(query=query, provider=p, api_key=api_key)
+
             if url:
                 return url
 
