@@ -6,6 +6,7 @@ The purpose of this maubot plugin is to process and display media for matrix ser
 
 A basic overview of the current commands supported:
 - `!help`: Show this help message.
+- `!get [url]`: Retrieve media from a URL.
 - `!audio [url]`: Extract audio from a video. (Aliases: `!mp3`)
 - `!gif [query]`: Search for a GIF.
 - `!giphy [query]`: Search for a GIF on Giphy.
@@ -15,7 +16,7 @@ A basic overview of the current commands supported:
 - `!lexica [query]`: Search for an AI-generated image. (Aliases: `!lex`)
 - `!waifu` : Roll for a random Waifu. (Aliases: `!g`)
 
-**Note**: If passive URL detection is enabled, incoming messages are parsed for URLs and the `get` command is applied to them.
+**Note**: If passive URL detection is enabled, incoming messages are parsed for URLs and the `!get` command is applied to them.
 
 ## Features
 
