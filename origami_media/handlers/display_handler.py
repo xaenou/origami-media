@@ -198,10 +198,13 @@ class DisplayHandler:
     async def censor(
         self, sanitized_message: str, event: "MaubotMessageEvent"
     ) -> "EventID":
-        if " " in sanitized_message:
-            cleaned_content = f"Link tracking parameter(s) removed: {sanitized_message}"
+        stripped_message = sanitized_message.strip()
+        if " " in stripped_message:
+            cleaned_content = (
+                f'Link tracking parameter(s) removed: "{stripped_message}"'
+            )
         else:
-            cleaned_content = f'Tracking parameter(s) removed: "{sanitized_message}"'
+            cleaned_content = f"Tracking parameter(s) removed: {stripped_message}"
         content = message.TextMessageEventContent(
             msgtype=message.MessageType.TEXT, body=cleaned_content
         )
