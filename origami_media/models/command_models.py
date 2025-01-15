@@ -52,7 +52,7 @@ BASE_COMMANDS = {
     "gif": Command(
         name="gif",
         type=CommandType.QUERY,
-        description="Search for a gif.",
+        description="Search for a GIF.",
         modifier="giphy|tenor",
     ),
     "giphy": Command(
