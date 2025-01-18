@@ -164,9 +164,13 @@ class CommandHandler:
 
         valid_urls = packet.data["valid_urls"]
 
-        processed_media = await self.media_handler.process(
-            urls=valid_urls, modifier=packet.command.modifier
+        media_requests = await self.media_handler.preprocess(
+            valid_urls, modifier=packet.command.modifier
         )
+        if not media_requests:
+            return None
+
+        processed_media = await self.media_handler.process(requests=media_requests)
 
         if packet.reaction_id:
             await self.client.redact(
@@ -187,11 +191,12 @@ class CommandHandler:
             provider=api_provider,
         )
 
-        valid_urls = self.url_handler.process_string(message=url)
-
-        processed_media = await self.media_handler.process(
-            urls=valid_urls,
+        valid_urls = self.url_handler.process_query_url_string(message=url)
+        media_requests = await self.media_handler.preprocess(
+            valid_urls, query_derived=True
         )
+
+        processed_media = await self.media_handler.process(requests=media_requests)
 
         if packet.reaction_id:
             await self.client.redact(

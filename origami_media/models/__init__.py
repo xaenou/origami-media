@@ -1,6 +1,6 @@
 from .command_models import ALIASES, BASE_COMMANDS, Command, CommandPacket, CommandType
 from .ffmpeg_models import FfmpegMetadata
-from .media_models import Media, MediaFile, MediaInfo, ProcessedMedia
+from .media_models import Media, MediaFile, MediaInfo, MediaRequest, ProcessedMedia
 
 __all__ = [
     "CommandType",
@@ -13,4 +13,5 @@ __all__ = [
     "MediaInfo",
     "MediaFile",
     "Media",
+    "MediaRequest",
 ]

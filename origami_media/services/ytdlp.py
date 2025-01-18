@@ -29,14 +29,14 @@ class Ytdlp:
         self.log = log
 
     def create_ytdlp_commands(
-        self, url: str, command_type: str, domain: str, platform_config: dict
+        self, url: str, command_type: str, platform_config: dict
     ) -> List[dict]:
         if command_type not in ("query", "download"):
             raise ValueError("command_type must be 'query' or 'download'")
 
         formats = platform_config.get("ytdlp_formats")
         if not formats:
-            raise ValueError(f"No formats set for {domain}")
+            raise ValueError(f"No formats set for {platform_config['name']}")
 
         result_commands = []
         escaped_url = shlex.quote(url)
@@ -57,24 +57,26 @@ class Ytdlp:
 
         cookies = ""
         if platform_config.get("enable_cookies"):
-            cookies_dir = f"/tmp/{domain}-cookies.txt"
+            cookies_dir = f"/tmp/{platform_config['name']}-cookies.txt"
             if cookies_dir:
                 cookies = f"--cookies '{cookies_dir}'"
 
-        for format_entry in formats:
-            if not format_entry:
-                raise ValueError(f"Format missing for {domain}")
-
-            if command_type == "query":
+        if command_type == "query":
+            for format_entry in formats:
+                if not format_entry:
+                    raise ValueError(f"Format missing for {platform_config['name']}")
                 result_commands.append(
                     {
                         "command": f"yt-dlp -q --no-warnings {query_flags} {cookies} {user_agent} {proxy} -f '{format_entry}' {escaped_url}",
+                        "selected_format": format_entry,
                     }
                 )
-            else:
+        else:
+            for format_entry in formats:
                 result_commands.append(
                     {
                         "command": f"yt-dlp -q --no-warnings {cookies} {user_agent} {proxy} -f '{format_entry}' -o '{output_arg}' {escaped_url}",
+                        "selected_format": format_entry,
                     }
                 )
 
@@ -83,12 +85,13 @@ class Ytdlp:
     async def ytdlp_execute_query(self, commands: List[dict]) -> dict:
         for command_entry in commands:
             command = command_entry.get("command")
+            format = command_entry.get("selected_format")
 
             if not command:
                 self.log.warning("Skipping empty command entry.")
                 continue
 
-            self.log.info(f"Running yt-dlp command → {command}")
+            self.log.info(f"Running yt-dlp command {format} → {command}")
 
             try:
                 process = await asyncio.create_subprocess_shell(
@@ -111,22 +114,27 @@ class Ytdlp:
                         self.log.error(
                             "Non-retryable error detected. Stopping retries."
                         )
-                        break
+                        return {"error": error_message}
 
-                    raise Exception(
-                        f"Command failed with return code {process.returncode}."
-                    )
+                    # Skip this command and move to the next
+                    continue
 
                 output = stdout.decode().strip()
                 if not output:
                     self.log.warning("Command produced empty output.")
                     continue
 
-                return json.loads(output)
+                ytdlp_dict = json.loads(output)
+                if not ytdlp_dict:
+                    continue
+                ytdlp_dict["selected_format"] = format
+
+                return ytdlp_dict
 
             except Exception as e:
                 self.log.exception(f"An error occurred: {e}")
-                raise Exception(f"{e}")
+                # Skip this command and move to the next
+                continue
 
             finally:
                 if process and process.returncode is None:
@@ -153,12 +161,13 @@ class Ytdlp:
     async def ytdlp_execute_download(self, commands: List[dict]) -> bytes:
         for command_entry in commands:
             command = command_entry.get("command")
+            format = command_entry.get("selected_format")
 
             if not command:
                 self.log.warning("Skipping empty download command.")
                 continue
 
-            self.log.info(f"Executing yt-dlp download command → {command}")
+            self.log.info(f"Executing yt-dlp download command {format} → {command}")
 
             process = None
             try:

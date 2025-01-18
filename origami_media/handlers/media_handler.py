@@ -13,7 +13,7 @@ if TYPE_CHECKING:
     from mautrix.util.logging.trace import TraceLogger
 
     from origami_media.main import Config
-    from origami_media.models.media_models import Media
+    from origami_media.models.media_models import Media, MediaRequest
 
 
 class MediaHandler:
@@ -76,17 +76,53 @@ class MediaHandler:
                 if media_part and isinstance(media_part.stream, BytesIO):
                     media_part.stream.close()
 
-    async def process(self, urls: list[str], modifier=None) -> list[ProcessedMedia]:
-        processed_media_array: list[ProcessedMedia] = []
-
+    async def preprocess(
+        self, urls: list[str], modifier=None, query_derived=False
+    ) -> list[MediaRequest]:
+        media_request_array: list[MediaRequest] = []
         for url in urls:
             try:
+                request = await self.media_processor.create_media_request(
+                    url=url, modifier=modifier, query_derived=query_derived
+                )
+                if not request:
+                    self.log.error(f"Failed to access platform config: {url}")
+                    continue
+
+                media_request: MediaRequest = request
+
+                metadata = None
+                metadata_result = await self.media_processor.get_media_request_metadata(
+                    media_request=media_request
+                )
+                if metadata_result == "invalid":
+                    self.log.error(f"Invalid media for ytdlp: {url}")
+                    continue
+                elif metadata_result == "N/A":
+                    metadata_result = None
+
+                metadata = metadata_result
+                media_request.metadata = metadata
+                media_request_array.append(media_request)
+            except Exception as e:
+                self.log.error(
+                    f"MediaHandler.preprocess: Unexpected error for URL {url}: {e}"
+                )
+                continue
+
+        return media_request_array
+
+    async def process(self, requests: list[MediaRequest]) -> list[ProcessedMedia]:
+        processed_media_array: list[ProcessedMedia] = []
+
+        for request in requests:
+            try:
                 media_object: Optional["Media"] = (
-                    await self.media_processor.process_url(url=url, modifier=modifier)
+                    await self.media_processor.process_request(request)
                 )
                 if not media_object:
                     self.log.warning(
-                        f"MediaHandler.process: Failed to process URL: {url}"
+                        f"MediaHandler.process: Failed to process URL: {request.url}"
                     )
                     continue
 
@@ -108,7 +144,7 @@ class MediaHandler:
 
             except Exception as e:
                 self.log.error(
-                    f"MediaHandler.process: Unexpected error for URL {url}: {e}"
+                    f"MediaHandler.process: Unexpected error for URL {request.url}: {e}"
                 )
                 continue
 

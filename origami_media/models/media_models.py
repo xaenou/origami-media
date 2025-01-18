@@ -53,3 +53,11 @@ class MediaFile:
 class Media:
     content: MediaFile
     thumbnail: Optional[MediaFile] = None
+
+
+@dataclass
+class MediaRequest:
+    platform_config: dict
+    url: str
+    modifier: Optional[str]
+    metadata: Optional[dict]

@@ -4,12 +4,12 @@ import re
 import unicodedata
 import uuid
 from io import BytesIO
-from typing import TYPE_CHECKING, Dict, Optional, Tuple
+from typing import TYPE_CHECKING, Dict, Literal, Optional, Tuple, Union
 from urllib.parse import urlparse
 
 from mautrix.util.magic import mimetype
 
-from origami_media.models.media_models import Media, MediaFile, MediaInfo
+from origami_media.models.media_models import Media, MediaFile, MediaInfo, MediaRequest
 from origami_media.services.ffmpeg import Ffmpeg
 from origami_media.services.native import Native
 from origami_media.services.ytdlp import DownloadSizeExceededError, Ytdlp
@@ -34,21 +34,45 @@ class MediaProcessor:
             log=self.log, config=self.config, http=self.http
         )
 
-    async def _handle_cookies(self, domain: str, platform_config: dict) -> None:
+    def _get_domain(self, url) -> str:
+        domain = urlparse(url).netloc.split(":")[0].split(".")[-2:]
+        domain = ".".join(domain).lower()
+        return domain
+
+    async def _get_platform_config(self, domain, query_derived=False) -> Optional[dict]:
+        if query_derived:
+            config_key = "query"
+        else:
+            config_key = None
+            for platform in self.config.platforms:
+                if platform["domain"] == domain:
+                    config_key = platform["config_key"]
+                    break
+            if not config_key:
+                self.log.warning(f"No config key set for {domain}")
+                return None
+
+        platform_config: dict = self.config.platform_configs.get(config_key, {})
+        if not platform_config:
+            self.log.warning(f"Config for {domain} is empty")
+            return None
+        return platform_config
+
+    async def _handle_cookies(self, platform_config: dict) -> None:
         if not platform_config.get("enable_cookies"):
             self.log.info("Cookies are not enabled.")
             return
 
         current_cookie_str = platform_config.get("cookies_file")
-        cookie_file_path = f"/tmp/{domain}-cookies.txt"
+        cookie_file_path = f"/tmp/{platform_config['name']}-cookies.txt"
 
         try:
             # Check if the file exists
             if self.native_controller.file_exists(
-                directory="/tmp", file_name=f"{domain}-cookies.txt"
+                directory="/tmp", file_name=f"{platform_config['name']}-cookies.txt"
             ):
                 previous_cookie_str = self.native_controller.read_from_file(
-                    directory="/tmp", file_name=f"{domain}-cookies.txt"
+                    directory="/tmp", file_name=f"{platform_config['name']}-cookies.txt"
                 )
 
                 # Update the file only if content differs
@@ -56,7 +80,7 @@ class MediaProcessor:
                     self.log.info("Updating cookies.txt as the content has changed.")
                     updated = self.native_controller.write_to_directory(
                         directory="/tmp",
-                        file_name=f"{domain}-cookies.txt",
+                        file_name=f"{platform_config['name']}-cookies.txt",
                         content=current_cookie_str,
                     )
                     if not updated:
@@ -69,7 +93,7 @@ class MediaProcessor:
                 self.log.info("cookies.txt not found. Writing new file.")
                 created = self.native_controller.write_to_directory(
                     directory="/tmp",
-                    file_name=f"{domain}-cookies.txt",
+                    file_name=f"{platform_config['name']}-cookies.txt",
                     content=current_cookie_str,
                 )
                 if not created:
@@ -80,6 +104,58 @@ class MediaProcessor:
 
         except Exception as e:
             self.log.error(f"An error occurred while handling cookies: {e}")
+
+    async def create_media_request(
+        self, url: str, modifier=None, query_derived=False
+    ) -> Optional[MediaRequest]:
+        domain = self._get_domain(url)
+        platform_config = await self._get_platform_config(
+            domain, query_derived=query_derived
+        )
+        if not platform_config:
+            return None
+
+        await self._handle_cookies(platform_config=platform_config)
+
+        return MediaRequest(
+            platform_config=platform_config,
+            url=url,
+            metadata=None,
+            modifier=modifier,
+        )
+
+    async def _query_advanced_media(self, url, platform_config: dict) -> Optional[Dict]:
+        try:
+            query_commands = self.ytdlp_controller.create_ytdlp_commands(
+                url,
+                command_type="query",
+                platform_config=platform_config,
+            )
+
+            ytdlp_metadata = await self.ytdlp_controller.ytdlp_execute_query(
+                commands=query_commands
+            )
+            return ytdlp_metadata
+
+        except Exception as e:
+            error_message = f"Failed to query media: {e}"
+            self._handle_download_error(error_message)
+            return None
+
+    async def get_media_request_metadata(
+        self, media_request: MediaRequest
+    ) -> Union[Dict, Literal["invalid", "N/A"]]:
+        if media_request.platform_config["ytdlp"]:
+            metadata = await self._query_advanced_media(
+                url=media_request.url,
+                platform_config=media_request.platform_config,
+            )
+            if not metadata:
+                metadata = "invalid"
+        else:
+            metadata = "N/A"
+
+        return metadata
 
     async def _attempt_thumbnail_fallback(
         self, ytdlp_metadata: dict
@@ -96,9 +172,11 @@ class MediaProcessor:
         self, data: bytes, modifier=None
     ) -> Optional[Tuple[bytes, FfmpegMetadata]]:
         try:
-            _, _, type_ = self._get_mimetype(data)
+            mime, subtype, type_ = self._get_mimetype(data)
 
-            if type_ == "video":
+            self.log.info(f"post-process detected type_: {mime} {subtype} {type_}")
+
+            if type_ == "video" or type_ == "application":
                 if modifier == "force_audio_only":
                     data = await self.ffmpeg_controller.normalize_audio(data)
                 elif self.config.ffmpeg.get("enable_normalize_videos_to_mp4"):
@@ -123,29 +201,8 @@ class MediaProcessor:
             self._handle_download_error(error_message)
             return None
 
-    async def _query_advanced_media(
-        self, url, domain: str, platform_config: dict
-    ) -> Optional[Dict]:
-        try:
-            query_commands = self.ytdlp_controller.create_ytdlp_commands(
-                url,
-                command_type="query",
-                domain=domain,
-                platform_config=platform_config,
-            )
-
-            ytdlp_metadata = await self.ytdlp_controller.ytdlp_execute_query(
-                commands=query_commands
-            )
-            return ytdlp_metadata
-
-        except Exception as e:
-            error_message = f"Failed to query media: {e}"
-            self._handle_download_error(error_message)
-            return None
-
     async def _download_advanced_media(
-        self, ytdlp_metadata: dict, platform_config: dict, domain: str
+        self, ytdlp_metadata: dict, platform_config: dict, modifier=None
     ) -> Tuple[Optional[bytes], bool]:
         # The bool is if the thumbnail fallback was used.
         try:
@@ -164,7 +221,10 @@ class MediaProcessor:
 
             # Check duration constraints
             duration = ytdlp_metadata.get("duration")
-            max_duration = self.config.file.get("max_duration", 0)
+            if modifier is not None and modifier == "force_audio_only":
+                max_duration = self.config.file.get("max_audio_only_duration", 0)
+            else:
+                max_duration = self.config.file.get("max_duration", 0)
             if duration and duration > max_duration:
                 self.log.warning("Media length exceeds the configured duration limit.")
                 if not self.config.ytdlp.get(
@@ -189,14 +249,21 @@ class MediaProcessor:
                 return data, is_thumbnail_fallback
 
             try:
-                data = await self.ytdlp_controller.ytdlp_execute_download(
-                    commands=self.ytdlp_controller.create_ytdlp_commands(
-                        ytdlp_metadata["url"],
-                        command_type="download",
-                        domain=domain,
-                        platform_config=platform_config,
-                    )
+                query_format = ytdlp_metadata["selected_format"]
+                commands = self.ytdlp_controller.create_ytdlp_commands(
+                    ytdlp_metadata["webpage_url"],
+                    command_type="download",
+                    platform_config=platform_config,
                 )
+                priority_command = next(
+                    (cmd for cmd in commands if cmd["selected_format"] == query_format),
+                    None,
+                )
+                if priority_command:
+                    commands.remove(priority_command)
+                    commands.insert(0, priority_command)
+
+                data = await self.ytdlp_controller.ytdlp_execute_download(commands)
                 is_thumbnail_fallback = False
                 return data, is_thumbnail_fallback
 
@@ -319,7 +386,7 @@ class MediaProcessor:
             "extractor": ytdlp_metadata.get("extractor"),
             "uploader": ytdlp_metadata.get("uploader", "unknown_uploader"),
             "title": ytdlp_metadata.get("title", "unknown_title"),
-            "url": ytdlp_metadata["url"],
+            "url": ytdlp_metadata["webpage_url"],
             "origin": "advanced",
             "thumbnail": ytdlp_metadata.get("thumbnail"),
         }
@@ -354,17 +421,11 @@ class MediaProcessor:
     async def _primary_media_controller(
         self,
         url: str,
-        domain: str,
         platform_config: dict,
+        ytdlp_metadata: Optional[dict],
         modifier=None,
     ) -> Optional[MediaFile]:
-
-        should_skip = platform_config.get("force_ytdlp", False)
-        self.log.info(
-            f"entering primary media controller, should skip simple download: {should_skip}"
-        )
-
-        if not should_skip:
+        if not platform_config.get("ytdlp"):
             data = await self._download_simple_media(url)
             if data:
                 result = await self._post_process(data, modifier=modifier)
@@ -374,25 +435,23 @@ class MediaProcessor:
                         data, ffmpeg_metadata=metadata, url=url
                     )
 
-        ytdlp_metadata = await self._query_advanced_media(
-            url, domain=domain, platform_config=platform_config
-        )
-        if ytdlp_metadata:
-            data, _is_thumbnail_fallback = await self._download_advanced_media(
-                ytdlp_metadata=ytdlp_metadata,
-                domain=domain,
-                platform_config=platform_config,
-            )
-            if data:
-                result = await self._post_process(data, modifier=modifier)
-                if result:
-                    data, metadata = result
-                    return await self._process_advanced_media(
-                        data,
-                        ffmpeg_metadata=metadata,
-                        ytdlp_metadata=ytdlp_metadata,
-                        _is_thumbnail_fallback=_is_thumbnail_fallback,
-                    )
+        else:
+            if ytdlp_metadata:
+                data, _is_thumbnail_fallback = await self._download_advanced_media(
+                    ytdlp_metadata=ytdlp_metadata,
+                    platform_config=platform_config,
+                    modifier=modifier,
+                )
+                if data:
+                    result = await self._post_process(data, modifier=modifier)
+                    if result:
+                        data, metadata = result
+                        return await self._process_advanced_media(
+                            data,
+                            ffmpeg_metadata=metadata,
+                            ytdlp_metadata=ytdlp_metadata,
+                            _is_thumbnail_fallback=_is_thumbnail_fallback,
+                        )
 
         return None
 
@@ -440,34 +499,21 @@ class MediaProcessor:
 
         return None
 
-    async def process_url(self, url: str, modifier=None) -> Optional[Media]:
-        domain = urlparse(url).netloc.split(":")[0].split(".")[-2:]
-        domain = ".".join(domain).lower()
-        config_key = None
-        for platform in self.config.platforms:
-            if platform["domain"] == domain:
-                config_key = platform["config_key"]
-                break
-        if not config_key:
-            self.log.warning(f"No config key set for {domain}")
-            return None
-
-        platform_config: dict = self.config.platform_configs.get(config_key, {})
-        if not platform_config:
-            self.log.warning(f"Config for {domain} is empty")
-            return None
-
-        await self._handle_cookies(domain=domain, platform_config=platform_config)
+    async def process_request(self, request: MediaRequest) -> Optional[Media]:
 
         primary_file_object = await self._primary_media_controller(
-            url, platform_config=platform_config, modifier=modifier, domain=domain
+            request.url,
+            platform_config=request.platform_config,
+            modifier=request.modifier,
+            ytdlp_metadata=request.metadata,
         )
+
         if not primary_file_object:
             self.log.warning("Failed to process primary media.")
             return None
 
         thumbnail_file_object = await self._thumbnail_media_controller(
-            primary_file_object, modifier=modifier
+            primary_file_object, modifier=request.modifier
         )
         if not thumbnail_file_object:
             self.log.warning("Thumbnail was not obtained.")

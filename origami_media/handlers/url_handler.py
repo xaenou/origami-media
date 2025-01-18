@@ -37,11 +37,11 @@ class UrlHandler:
         self.log.info(f"Filtered: {urls}")
         return list(dict.fromkeys(urls))
 
-    def _validate_domain(self, url: str) -> str | None:
+    def _validate_domain(self, url: str, check_whitelist: bool) -> str | None:
         domain = urlparse(url).netloc.split(":")[0].split(".")[-2:]
         domain = ".".join(domain).lower()
 
-        if self.config.meta.get("use_platform_domains_as_whitelist", True):
+        if check_whitelist:
             whitelist = {platform["domain"] for platform in self.config.platforms}
             if domain not in whitelist:
                 self.log.warning(f"Invalid or unwhitelisted domain: {domain}")
@@ -66,6 +66,9 @@ class UrlHandler:
         valid_urls = []
         message = str(event.content.body)
         exceeds_url_limit = False
+        whitelist = False
+        if self.config.meta.get("use_platform_domains_as_whitelist", True):
+            whitelist = True
 
         urls = self._extract_urls(message)
         if len(urls) > self.config.queue.get("max_message_url_count", 1):
@@ -82,7 +85,7 @@ class UrlHandler:
 
         for url in urls:
             try:
-                domain = self._validate_domain(url)
+                domain = self._validate_domain(url, check_whitelist=whitelist)
                 if not domain:
                     continue
 
@@ -114,7 +117,7 @@ class UrlHandler:
 
         return unique_valid_urls, sanitized_message, should_censor, exceeds_url_limit
 
-    def process_string(self, message: str) -> list[str]:
+    def process_query_url_string(self, message: str) -> list[str]:
         valid_urls = []
         urls = self._extract_urls(message)
 
@@ -128,7 +131,7 @@ class UrlHandler:
 
         for url in urls:
             try:
-                domain = self._validate_domain(url)
+                domain = self._validate_domain(url, check_whitelist=False)
                 if not domain:
                     continue
 

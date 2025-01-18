@@ -2,11 +2,12 @@ meta:
   enable_passive_url_detection: true
   enable_commands: true
   censor_trackers: true
-  use_platform_domains_as_whitelist: true
+  use_platform_domains_as_whitelist: true # Does not apply to query commands
   debug: false
 
 file:
   max_duration: 1200 # seconds
+  max_audio_only_duration: 7560 # seconds
   max_in_memory_file_size: 104857600 # bytes
   max_file_size: 104857600 # bytes
 
@@ -55,58 +56,60 @@ platforms:
     config_key: "generic2"
   - domain: "4cdn.org"
     config_key: "generic2"
-  - domain: "tenor.com"
-    config_key: "generic2"
-  - domain: "giphy.com"
-    config_key: "generic2"
-  - domain: "unsplash.com"
-    config_key: "generic2"
-  - domain: "waifu.im"
-    config_key: "generic2"
-  - domain: "workers.dev"
-    config_key: "generic2"
 
 platform_configs:
   youtube:
-    enable_cookies: true
-    enable_proxy: true
+    name: "youtube"
+    enable_cookies: false
+    enable_proxy: false
     proxy: "SECRET"
-    enable_custom_user_agent: true
+    enable_custom_user_agent: false
     custom_user_agent: "PLACEHOLDER"
-    force_ytdlp: true
+    ytdlp: true
     ytdlp_formats:
+      - "bestvideo[height<=720]+bestaudio/best[height<=720]"
       - "worst"
     cookies_file: |
 
   x:
-    enable_cookies: true
-    enable_proxy: true
+    name: "x"
+    enable_cookies: false
+    enable_proxy: false
     proxy: "SECRET"
-    enable_custom_user_agent: true
+    enable_custom_user_agent: false
     custom_user_agent: "PLACEHOLDER"
-    force_ytdlp: true
+    ytdlp: true
     ytdlp_formats:
+      - "bestvideo[height<=720]+bestaudio/best[height<=720]"
       - "worst"
     cookies_file: |
 
   generic1:
+    name: "generic1"
     enable_cookies: false
     enable_proxy: true
     proxy: "SECRET"
     enable_custom_user_agent: true
     custom_user_agent: "PLACEHOLDER"
-    force_ytdlp: true
+    ytdlp: true
     ytdlp_formats:
       - "worst"
     cookies_file: |
 
   generic2:
+    name: "generic2"
     enable_cookies: false
     enable_proxy: true
     proxy: "SECRET"
     enable_custom_user_agent: true
     custom_user_agent: "PLACEHOLDER"
-    force_ytdlp: false
-    ytdlp_formats:
-      - "worst"
-    cookies_file: |
+    ytdlp: false
+
+  query:
+    name: "query"
+    enable_cookies: false
+    enable_proxy: true
+    proxy: "SECRET"
+    enable_custom_user_agent: true
+    custom_user_agent: "PLACEHOLDER"
+    ytdlp: false
