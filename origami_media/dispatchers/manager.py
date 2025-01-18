@@ -28,7 +28,7 @@ class Manager:
         self.client = client
         self.command_handler = command_handler
 
-        self.ROUTE_EXECUTION_TIMEOUT = 180
+        self.ROUTE_EXECUTION_TIMEOUT = 350
         self.preprocess_tasks = set()
         self.preprocess_lock = asyncio.Lock()
 

@@ -223,11 +223,11 @@ class Ffmpeg:
             or 0.0
         )
 
-        max_duration = self.config.get("file", {}).get("max_duration", 0)
-        if max_duration > 0 and duration > max_duration:
-            raise ValueError(
-                f"Duration exceeds maximum allowed duration ({max_duration}s)."
-            )
+        # max_duration = self.config.get("file", {}).get("max_duration", 0)
+        # if max_duration > 0 and duration > max_duration:
+        #     raise ValueError(
+        #         f"Duration exceeds maximum allowed duration ({max_duration}s)."
+        #     )
 
         width = (
             self._parse_dimension(format_info.get("width"))

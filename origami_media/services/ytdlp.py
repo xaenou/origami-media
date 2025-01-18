@@ -5,7 +5,6 @@ import json
 import shlex
 from io import BytesIO
 from typing import TYPE_CHECKING, List
-from urllib.parse import urlparse
 
 if TYPE_CHECKING:
     from mautrix.util.logging.trace import TraceLogger
@@ -159,6 +158,7 @@ class Ytdlp:
         raise RuntimeError("No valid yt-dlp query command succeeded.")
 
     async def ytdlp_execute_download(self, commands: List[dict]) -> bytes:
+        last_exception = None
         for command_entry in commands:
             command = command_entry.get("command")
             format = command_entry.get("selected_format")
@@ -208,8 +208,9 @@ class Ytdlp:
                     error_message = (
                         stderr.decode().strip() or "No error message captured."
                     )
-                    self.log.warning(f"download failed: {error_message}")
+                    self.log.warning(f"Download failed: {error_message}")
 
+                    # Non-retryable error handling
                     if any(code in error_message for code in ["403"]):
                         self.log.error(
                             "Non-retryable error detected. Stopping retries."
@@ -231,8 +232,10 @@ class Ytdlp:
                 return video_data.getvalue()
 
             except Exception as e:
-                self.log.exception(f"An unexpected error occurred: {e}")
-                raise
+                self.log.exception(f"An error occurred with command {command}: {e}")
+                last_exception = (
+                    e  # Store the exception to raise later if all commands fail
+                )
 
             finally:
                 if process and process.returncode is None:
@@ -252,4 +255,9 @@ class Ytdlp:
                                 "Process is stuck and could not be terminated."
                             )
 
-        raise RuntimeError("No valid yt-dlp download command succeeded.")
+        if last_exception:
+            raise RuntimeError(
+                "No valid yt-dlp download command succeeded. See logs for details."
+            ) from last_exception
+        else:
+            raise RuntimeError("No valid yt-dlp download command succeeded.")

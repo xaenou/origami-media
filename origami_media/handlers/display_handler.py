@@ -106,6 +106,7 @@ class DisplayHandler:
                 duration=int(content_info.duration or 0),
                 size=int(content_info.size or 0),
             )
+            body = filename
         elif content_info.media_type == "image":
             self.log.info("Content being rendered as image")
             if content_info.origin == "advanced-thumbnail-fallback":
