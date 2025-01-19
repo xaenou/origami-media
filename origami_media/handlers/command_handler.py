@@ -9,7 +9,6 @@ from origami_media.models.command_models import (
     CommandPacket,
     CommandType,
 )
-from origami_media.services.native import Native
 
 if TYPE_CHECKING:
     from aiohttp import ClientSession
@@ -46,7 +45,6 @@ class CommandHandler:
         self.media_handler = media_handler
         self.query_handler = query_handler
         self.url_handler = url_handler
-        self.native_controller = Native(self.config, self.log, self.http)
 
     @staticmethod
     def ensure_reaction_cleanup(method):

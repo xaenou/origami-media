@@ -24,10 +24,17 @@ class QueryHandler:
         provider: str,
         api_key: Optional[str] = None,
     ) -> Optional[str]:
-        async def fetch_url(url, headers=None):
+        async def fetch_url(url):
             proxy = None
-            if self.config.command["query_image"]["enable_proxy"]:
-                proxy = self.config.command["query_image"].get("proxy")
+            if self.config.platform_configs["query"]["enable_proxy"]:
+                proxy = self.config.platform_configs["query"].get("proxy")
+
+            headers = {}
+            if self.config.platform_configs["query"]["enable_custom_user_agent"]:
+                user_agent = self.config.platform_configs["query"]["custom_user_agent"]
+                if user_agent:
+                    headers["User-Agent"] = user_agent
+
             async with self.http.get(url, proxy=proxy, headers=headers) as response:
                 self.log.info(f"Response status: {response.status}")
                 if response.status != 200:
@@ -145,8 +152,7 @@ class QueryHandler:
                 {"q": query, "format": "json", "category_images": 1}
             )
             base_url = f"{api_key}?{url_params}"
-            headers = {"User-Agent": "Mozilla/5.0"}
-            data = await fetch_url(base_url, headers=headers)
+            data = await fetch_url(base_url)
             if not data:
                 return None
             results = data.get("results", [])

@@ -190,14 +190,19 @@ class MediaProcessor:
         )
 
     async def _attempt_thumbnail_fallback(
-        self, ytdlp_metadata: dict
+        self,
+        ytdlp_metadata: dict,
+        platform_config: dict,
     ) -> Optional[bytes]:
         self.log.info("Attempting to fallback to thumbnail.")
         if not ytdlp_metadata.get("thumbnail"):
             self.log.warning("No thumbnail found.")
             return None
 
-        data = await self._download_simple_media(ytdlp_metadata["thumbnail"])
+        data = await self._download_simple_media(
+            ytdlp_metadata["thumbnail"],
+            platform_config=platform_config,
+        )
         return data
 
     async def _post_process(
@@ -230,9 +235,16 @@ class MediaProcessor:
             self.log.warning(f"Error: {e}")
             return None
 
-    async def _download_simple_media(self, url: str) -> Optional[bytes]:
+    async def _download_simple_media(
+        self,
+        url: str,
+        platform_config: dict,
+    ) -> Optional[bytes]:
         try:
-            return await self.native_controller.client_download(url)
+            return await self.native_controller.client_download(
+                url,
+                platform_config=platform_config,
+            )
         except Exception as e:
             error_message = f"Failed to download media: {e}"
             self._handle_download_error(error_message)
@@ -270,7 +282,10 @@ class MediaProcessor:
                     "enable_thumbnail_fallback_if_duration_or_size_exceeds"
                 ):
                     return None, False
-                data = await self._attempt_thumbnail_fallback(ytdlp_metadata)
+                data = await self._attempt_thumbnail_fallback(
+                    ytdlp_metadata,
+                    platform_config=platform_config,
+                )
                 is_thumbnail_fallback = True
                 return data, is_thumbnail_fallback
 
@@ -283,7 +298,10 @@ class MediaProcessor:
                     "enable_thumbnail_fallback_if_duration_or_size_exceeds"
                 ):
                     return None, False
-                data = await self._attempt_thumbnail_fallback(ytdlp_metadata)
+                data = await self._attempt_thumbnail_fallback(
+                    ytdlp_metadata,
+                    platform_config=platform_config,
+                )
                 is_thumbnail_fallback = True
                 return data, is_thumbnail_fallback
 
@@ -316,7 +334,10 @@ class MediaProcessor:
                     "enable_thumbnail_fallback_if_duration_or_size_exceeds"
                 ):
                     return None, False
-                data = await self._attempt_thumbnail_fallback(ytdlp_metadata)
+                data = await self._attempt_thumbnail_fallback(
+                    ytdlp_metadata,
+                    platform_config=platform_config,
+                )
                 is_thumbnail_fallback = True
                 return data, is_thumbnail_fallback
 
@@ -470,7 +491,10 @@ class MediaProcessor:
         modifier=None,
     ) -> Optional[MediaFile]:
         if not platform_config.get("ytdlp"):
-            data = await self._download_simple_media(url)
+            data = await self._download_simple_media(
+                url,
+                platform_config=platform_config,
+            )
             if data:
                 result = await self._post_process(
                     data,
@@ -509,14 +533,18 @@ class MediaProcessor:
         return None
 
     async def _thumbnail_media_controller(
-        self, primary_media_object: MediaFile, modifier=None
+        self,
+        primary_media_object: MediaFile,
+        platform_config: dict,
+        modifier=None,
     ) -> Optional[MediaFile]:
         if (
             primary_media_object.metadata.origin == "advanced"
             and primary_media_object.metadata.thumbnail_url
         ):
             data = await self._download_simple_media(
-                primary_media_object.metadata.thumbnail_url
+                primary_media_object.metadata.thumbnail_url,
+                platform_config=platform_config,
             )
             if data:
                 result = await self._post_process(data, platform_config=None)
@@ -567,7 +595,9 @@ class MediaProcessor:
             return None
 
         thumbnail_file_object = await self._thumbnail_media_controller(
-            primary_file_object, modifier=request.modifier
+            primary_file_object,
+            modifier=request.modifier,
+            platform_config=request.platform_config,
         )
         if not thumbnail_file_object:
             self.log.warning("Thumbnail was not obtained.")

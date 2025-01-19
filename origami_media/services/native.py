@@ -76,9 +76,19 @@ class Native:
 
         return False
 
-    async def client_download(self, url) -> bytes:
+    async def client_download(self, url, platform_config: dict) -> bytes:
         max_retries = 1
         max_file_size = self.config.file.get("max_in_memory_file_size", 0)
+
+        proxy = None
+        if platform_config["enable_proxy"]:
+            proxy = platform_config.get("proxy")
+
+        headers = {}
+        if platform_config["enable_custom_user_agent"]:
+            user_agent = platform_config["custom_user_agent"]
+            if user_agent:
+                headers["User-Agent"] = user_agent
 
         self.log.info(
             f"client_download: Starting stream from '{url}' to memory. "
@@ -87,7 +97,7 @@ class Native:
 
         for attempt in range(1, max_retries + 1):
             try:
-                response = await self.http.get(url=url)
+                response = await self.http.get(url, proxy=proxy, headers=headers)
                 if response.status != 200:
                     self.log.warning(
                         f"client_download: Attempt {attempt}: {url}: {response.status}"
