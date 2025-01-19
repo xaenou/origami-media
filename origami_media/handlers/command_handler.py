@@ -138,7 +138,7 @@ class CommandHandler:
                 else:
                     alias_text = ""
 
-                if command == "waifu":
+                if command == "waifu" or command == "danbooru":
                     arg_text = ""
                 elif details.type == CommandType.QUERY:
                     arg_text = "[query]"

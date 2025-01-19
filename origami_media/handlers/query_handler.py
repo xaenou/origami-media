@@ -127,6 +127,19 @@ class QueryHandler:
             result = random.choice(results)
             return result.get("url")
 
+        if provider == "danbooru":
+            base_url = f"https://danbooru.donmai.us/posts/random.json?tags=1girl+rating%3Ageneral+solo"
+            data = await fetch_url(base_url)
+            if not data:
+                return None
+
+            file_url = data.get("file_url")
+            if not file_url:
+                self.log.error("No file URL found in the Danbooru response.")
+                return None
+
+            return file_url
+
         if provider == "searx":
             url_params = urllib.parse.urlencode(
                 {"q": query, "format": "json", "category_images": 1}

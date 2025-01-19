@@ -91,6 +91,12 @@ BASE_COMMANDS = {
         description="Roll for a random Waifu.",
         modifier="waifu",
     ),
+    "danbooru": Command(
+        name="danbooru",
+        type=CommandType.QUERY,
+        description="Roll for a random Waifu from Danbooru.",
+        modifier="danbooru",
+    ),
     "debug": Command(
         name="debug",
         type=CommandType.DEBUG,
@@ -103,6 +109,7 @@ ALIASES = {
     "stock": "unsplash",
     "lex": "lexica",
     "g": "waifu",
+    "gd": "danbooru",
 }
 
 
