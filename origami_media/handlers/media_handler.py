@@ -90,20 +90,8 @@ class MediaHandler:
                     continue
 
                 media_request: MediaRequest = request
-
-                metadata = None
-                metadata_result = await self.media_processor.get_media_request_metadata(
-                    media_request=media_request
-                )
-                if metadata_result == "invalid":
-                    self.log.error(f"Invalid media for ytdlp: {url}")
-                    continue
-                elif metadata_result == "N/A":
-                    metadata_result = None
-
-                metadata = metadata_result
-                media_request.metadata = metadata
                 media_request_array.append(media_request)
+
             except Exception as e:
                 self.log.error(
                     f"MediaHandler.preprocess: Unexpected error for URL {url}: {e}"

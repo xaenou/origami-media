@@ -35,7 +35,7 @@ ffmpeg:
   livestream_preview_length: 15 # seconds
   enable_thumbnail_generation: true
   enable_normalize_videos_to_mp4: true
-  enable_normalize_audio_to_mp3: true
+  enable_normalize_audio_to_mp3: true # Only applies to audio not downloaded using yt-dlp, otherwise it already is converted to mp3
 
 platforms:
   - domain: "youtube.com"
@@ -58,6 +58,7 @@ platforms:
     config_key: "generic2"
 
 platform_configs:
+  # Note: yt-dlp formats do not apply if audio-only command is used.
   youtube:
     name: "youtube"
     enable_cookies: false

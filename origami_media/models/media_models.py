@@ -59,5 +59,6 @@ class Media:
 class MediaRequest:
     platform_config: dict
     url: str
+    uuid: str
     modifier: Optional[str]
-    metadata: Optional[dict]
+    ytdlp_metadata: Optional[dict]
