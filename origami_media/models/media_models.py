@@ -25,6 +25,7 @@ class MediaInfo:
     origin: Literal["simple", "advanced", "thumbnail", "advanced-thumbnail-fallback"]
     id: str
     mimetype: str
+    is_live: bool
     thumbnail_url: Optional[str] = None
     title: Optional[str] = None
     uploader: Optional[str] = None

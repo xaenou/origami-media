@@ -415,6 +415,7 @@ class MediaProcessor:
                 height=file_metadata.height,
                 size=len(stream),
                 media_type=type_,
+                is_live=other_metadata.get("is_live", False),
                 thumbnail_url=other_metadata.get("thumbnail"),
                 meta_size=other_metadata.get("meta_size"),
                 meta_duration=other_metadata.get("meta_duration"),
@@ -453,6 +454,7 @@ class MediaProcessor:
             "url": ytdlp_metadata["webpage_url"],
             "origin": "advanced",
             "thumbnail": ytdlp_metadata.get("thumbnail"),
+            "is_live": ytdlp_metadata.get("is_live"),
         }
 
         if _is_thumbnail_fallback:
