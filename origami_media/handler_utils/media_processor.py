@@ -221,11 +221,11 @@ class MediaProcessor:
                     or type_ == "application"
                     and modifier != "force_audio_only"
                 ):
-                    if self.config.ffmpeg.get("enable_normalize_videos_to_mp4"):
-                        data = await self.ffmpeg_controller.normalize_video(data)
+                    if self.config.ffmpeg.get("enable_video_postprocessing"):
+                        data = await self.ffmpeg_controller.postprocess_video(data)
                 elif type_ == "audio" and not platform_config["ytdlp"]:
-                    if self.config.ffmpeg.get("enable_normalize_audio_to_mp3"):
-                        data = await self.ffmpeg_controller.normalize_audio(data)
+                    if self.config.ffmpeg.get("enable_audio_postprocessing"):
+                        data = await self.ffmpeg_controller.prostprocess_audio(data)
 
             processed_data = data
             metadata = await self.ffmpeg_controller.extract_metadata(data)

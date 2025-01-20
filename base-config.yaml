@@ -32,8 +32,34 @@ ffmpeg:
   enable_livestream_previews: true
   livestream_preview_length: 15 # seconds
   enable_thumbnail_generation: true
-  enable_normalize_videos_to_mp4: true
-  enable_normalize_audio_to_mp3: true # Only applies to audio not downloaded using yt-dlp, otherwise it already is converted to mp3
+  enable_video_postprocessing: true
+  video_input_args:
+    - "-nostdin"
+  video_output_args:
+    - "-f"
+    - "mp4" # Set output format to MP4
+    - "-c:v"
+    - "libx264" # Use H.264 codec for video
+    - "-preset"
+    - "fast" # Set the encoding preset to 'fast'
+    - "-c:a"
+    - "aac" # Use AAC codec for audio
+    - "-b:a"
+    - "192k" # Set audio bitrate to 192 kbps
+    - "-movflags"
+    - "+faststart" # Optimize for web streaming
+  video_output_ext: "mp4"
+  enable_audio_postprocessing: true # Only applies to audio not downloaded using yt-dlp, it already is converted to mp3
+  audio_input_args:
+    - "-nostdin"
+  audio_output_args:
+    - "-f"
+    - "mp3" # Set output format to MP3
+    - "-c:a"
+    - "libmp3lame" # Use LAME codec for MP3 audio
+    - "-b:a"
+    - "192k" # Set audio bitrate to 192 kbps
+  audio_output_ext: "mp3"
 
 platforms:
   - domain: "youtube.com"

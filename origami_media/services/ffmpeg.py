@@ -89,72 +89,47 @@ class Ffmpeg:
         except Exception as e:
             raise RuntimeError(f"Failed to capture livestream: {e}")
 
-    async def convert_fragmented_mp4_to_mp4(self, video_data: bytes) -> bytes:
-        self.log.info(
-            f"Converting fragmented MP4, input size: {len(video_data)} bytes."
-        )
+    async def postprocess_video(self, video_data: bytes) -> bytes:
+        self.log.info(f"Post-processing video, input size: {len(video_data)} bytes.")
 
-        data = await convert_bytes(
-            data=video_data,
-            output_extension="mp4",
-            input_args=["-nostdin"],
-            output_args=["-f", "mp4", "-c", "copy", "-movflags", "+faststart"],
-            input_mime="video/mp4",
-            logger=self.log,
-        )
-
-        self.log.info("Fragmented MP4 successfully converted.")
-        if not self._validate_file_size(data):
-            raise RuntimeError("Repaired MP4 file size is too large")
-
-        return data
-
-    async def normalize_video(self, video_data: bytes) -> bytes:
-        self.log.info(f"Converting video to MP4, input size: {len(video_data)} bytes.")
+        input_args = self.config.ffmpeg["video_input_args"]
+        output_args = self.config.ffmpeg["video_output_args"]
+        output_ext = self.config.ffmpeg["video_output_ext"]
 
         processed_data = await convert_bytes(
             data=video_data,
-            output_extension="mp4",
-            input_args=["-nostdin"],
-            output_args=[
-                "-f",
-                "mp4",
-                "-c:v",
-                "libx264",
-                "-preset",
-                "fast",
-                "-c:a",
-                "aac",
-                "-b:a",
-                "192k",
-                "-movflags",
-                "+faststart",
-            ],
+            output_extension=output_ext,
+            input_args=input_args,
+            output_args=output_args,
             logger=self.log,
         )
 
-        self.log.info("Video successfully converted to MP4 with audio normalization.")
+        self.log.info("Video successfully processed.")
 
         if not self._validate_file_size(processed_data):
-            raise RuntimeError("Converted MP4 file size is too large")
+            raise RuntimeError("Converted file size is too large")
 
         return processed_data
 
-    async def normalize_audio(self, data: bytes) -> bytes:
-        self.log.info(f"Converting to MP3, input size: {len(data)} bytes.")
+    async def prostprocess_audio(self, data: bytes) -> bytes:
+        self.log.info(f"Post-processing audio, input size: {len(data)} bytes.")
+
+        input_args = self.config.ffmpeg["audio_input_args"]
+        output_args = self.config.ffmpeg["audio_output_args"]
+        output_ext = self.config.ffmpeg["audio_output_ext"]
 
         processed_data = await convert_bytes(
             data=data,
-            output_extension="mp3",
-            input_args=["-nostdin"],
-            output_args=["-f", "mp3", "-c:a", "libmp3lame", "-b:a", "192k"],
+            output_extension=output_ext,
+            input_args=input_args,
+            output_args=output_args,
             logger=self.log,
         )
 
-        self.log.info("Successfully converted to MP3.")
+        self.log.info("Audio succesfully processed.")
 
         if not self._validate_file_size(processed_data):
-            raise RuntimeError("Converted MP3 file size is too large")
+            raise RuntimeError("Converted file size is too large")
 
         return processed_data
 

@@ -87,7 +87,7 @@ class DisplayHandler:
                     else:
                         duration_str = f"{seconds} seconds"
                 if content_info.is_live:
-                    body = f"**Title:** {content_info.title}\n\n**{total_seconds}-second live preview**"
+                    body = f"**Title:** {content_info.title}\n\n**{total_seconds}-second live preview**\n\n**Size:** {size_str}"
                 else:
                     body = f"**Title:** {content_info.title}\n\n**Duration:** {duration_str}\n\n**Size:** {size_str}"
             msgtype = message.MessageType.VIDEO
