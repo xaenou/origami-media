@@ -14,7 +14,8 @@ A basic overview of the current commands supported:
 - `!img [query]`: Search the web for an image using searx.
 - `!unsplash [query]`: Search for a stock image. (Aliases: `!stock`)
 - `!lexica [query]`: Search for an AI-generated image. (Aliases: `!lex`)
-- `!waifu` : Roll for a random Waifu. (Aliases: `!g`)
+- `!waifu`: Roll for a random Waifu. (Aliases: `!g`)
+- `!danbooru`: Roll for a random Waifu from Danbooru. (Aliases: `!gd`)
 
 **Note**: If passive URL detection is enabled, incoming messages are parsed for URLs and the `!get` command is applied to them.
 
