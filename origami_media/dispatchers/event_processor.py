@@ -48,20 +48,23 @@ class EventProcessor:
         if not body.strip():
             return None
 
-        parts = body.split(" ", 1)
-        command_name = parts[0]
-        user_args = parts[1].strip() if len(parts) > 1 else ""
-
-        command = self._resolve_command(command_name)
-        if not command:
+        if not body.startswith(self.command_prefix):
             return None
 
-        return CommandPacket(command=command, event=event, user_args=user_args)
+        body_no_prefix = body[len(self.command_prefix) :].strip()
 
-    def _resolve_command(self, command_name: str) -> Optional[Command]:
-        command_name = command_name[len(self.command_prefix) :]
+        if not body_no_prefix:
+            return None
+
+        parts = body_no_prefix.split(" ", 1)
+        command_name = parts[0]
+        user_args = parts[1].strip() if len(parts) > 1 else ""
 
         if command_name in ALIASES:
             command_name = ALIASES[command_name]
 
-        return BASE_COMMANDS.get(command_name)
+        command = BASE_COMMANDS.get(command_name)
+        if not command:
+            return None
+
+        return CommandPacket(command=command, event=event, user_args=user_args)
