@@ -146,7 +146,7 @@ class QueryHandler:
             if not query:
                 query = ""
             else:
-                query = "+" + query.replace(" ", "+").replace(":", "%3A")
+                query = "+" + urllib.parse.quote(query, safe="")
             full_url = (
                 base_url
                 + "?tags=rating%3Ag%2Cs"
