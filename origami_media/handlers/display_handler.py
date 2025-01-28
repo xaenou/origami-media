@@ -49,7 +49,9 @@ class DisplayHandler:
         }
         return SERVICES.get(key, key)
 
-    async def _build_message_content(self, processed_media: "ProcessedMedia"):
+    async def _build_message_content(
+        self, processed_media: "ProcessedMedia", additional_data: dict
+    ):
         filename = processed_media.filename
         content_info = processed_media.content_info
         uri = processed_media.content_uri
@@ -90,6 +92,8 @@ class DisplayHandler:
                     body = f"**Title:** {content_info.title}\n\n**{total_seconds}-second live preview**\n\n**Size:** {size_str}"
                 else:
                     body = f"**Title:** {content_info.title}\n\n**Duration:** {duration_str}\n\n**Size:** {size_str}"
+            elif "donmai" in content_info.url:
+                body = f"**Danbooru ID:** {additional_data['danbooru_id']}"
             msgtype = message.MessageType.VIDEO
             media_info = VideoInfo(
                 mimetype=content_info.mimetype,
@@ -110,6 +114,7 @@ class DisplayHandler:
                 size=int(content_info.size or 0),
             )
             body = filename
+
         elif content_info.media_type == "image":
             self.log.info("Content being rendered as image")
             if content_info.origin == "advanced-thumbnail-fallback":
@@ -125,6 +130,9 @@ class DisplayHandler:
                     else:
                         duration_str = f"{seconds} seconds"
                 body = f"**Title:** {content_info.title}\n\n**Duration:** {duration_str}\n\n**Platform:** {self._convert_extractor(content_info.extractor or "")}"
+            elif "donmai" in content_info.url:
+                body = f"**Danbooru ID:** {additional_data['danbooru_id']}"
+
             msgtype = message.MessageType.IMAGE
             media_info = ImageInfo(
                 mimetype=content_info.mimetype,
@@ -160,12 +168,14 @@ class DisplayHandler:
         self,
         media: list["ProcessedMedia"],
         event: "MaubotMessageEvent",
+        additional_data: dict,
         reply: bool = True,
     ) -> None:
         for media_object in media:
             try:
                 content = await self._build_message_content(
-                    processed_media=media_object
+                    processed_media=media_object,
+                    additional_data=additional_data,
                 )
                 if reply:
                     content.set_reply(event, disable_fallback=True)

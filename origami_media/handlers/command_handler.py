@@ -179,7 +179,7 @@ class CommandHandler:
             packet.reaction_id = None
 
         await self.display_handler.render_media(
-            media=processed_media, event=packet.event
+            media=processed_media, event=packet.event, additional_data=packet.data
         )
 
     async def _process_query(self, packet: CommandPacket) -> None:
@@ -187,8 +187,7 @@ class CommandHandler:
 
         api_provider = packet.command.modifier or ""
         url = await self.query_handler.query_image_controller(
-            query=packet.user_args,
-            provider=api_provider,
+            query=packet.user_args, provider=api_provider, data_dict=packet.data
         )
 
         valid_urls = self.url_handler.process_query_url_string(message=url)
@@ -205,5 +204,8 @@ class CommandHandler:
             packet.reaction_id = None
 
         await self.display_handler.render_media(
-            media=processed_media, event=packet.event, reply=False
+            media=processed_media,
+            event=packet.event,
+            reply=False,
+            additional_data=packet.data,
         )

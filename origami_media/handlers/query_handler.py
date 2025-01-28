@@ -22,6 +22,7 @@ class QueryHandler:
         self,
         query: str,
         provider: str,
+        data_dict: dict,
         api_key: Optional[str] = None,
     ) -> Optional[str]:
         async def fetch_url(url):
@@ -134,46 +135,89 @@ class QueryHandler:
             return result.get("url")
 
         if provider == "danbooru":
-            base_url = f"https://danbooru.donmai.us/posts.json"
+            base_url = "https://danbooru.donmai.us/posts.json"
+            default_search_tags = ["1girl", "solo"]
+            attempts = 3
+
             edge_post = await fetch_url(base_url)
             if not edge_post:
                 return None
             edge_post_id = edge_post[0].get("id")
             if not edge_post_id:
                 return None
-            random_id = random.randrange(200, edge_post_id)
+
+            random_post_range = [200, edge_post[1].get("id")]
 
             if not query:
-                query = ""
+                queries = []
+                date_query = None
             else:
-                query = "+" + urllib.parse.quote(query, safe="")
-            full_url = (
-                base_url
-                + "?tags=rating%3Ag%2Cs"
-                + query
-                + "&limit=200"
-                + "&page=b"
-                + str(random_id)
-            )
+                queries = query.split()
+                date_query = None
 
-            raw_data = await fetch_url(full_url)
-            if not raw_data:
-                return None
+                # Remove default tags
+                for q in queries[:]:
+                    if q.lower() == "-solo":
+                        default_search_tags.remove(
+                            "solo",
+                        )
+                        queries.remove(q)
+                    if q.lower() == "-1girl":
+                        default_search_tags.remove(
+                            "1girl",
+                        )
+                        queries.remove(q)
+
+                for q in queries[:]:
+                    if q.lower().startswith("date"):
+                        date_query = q
+                        encoded_date_query = urllib.parse.quote(date_query, safe="")
+                        date_post = await fetch_url(
+                            base_url + "?tags=" + encoded_date_query
+                        )
+                        date_post_old = await fetch_url(
+                            base_url + "?tags=order%3Aid+" + encoded_date_query
+                        )
+                        if not date_post_old or not date_post:
+                            return
+                        random_post_range[0] = date_post_old[1].get("id") + 200
+                        random_post_range[1] = date_post[1].get("id")
+                        queries.remove(q)
+
+            formatted_query = urllib.parse.quote(" ".join(queries), safe="")
 
             filtered_data = []
-            for x in raw_data:
-                tag_string = x.get("tag_string", "")
-                tags = tag_string.split()
-                if "1girl" in tags and "solo" in tags:
-                    filtered_data.append(x)
-            if not filtered_data:
-                return None
+            for x in range(attempts):
+                random_post_id = random.randrange(
+                    random_post_range[0], random_post_range[1]
+                )
+                full_url = (
+                    base_url
+                    + "?tags=rating%3Ageneral"
+                    + "+"
+                    + "+".join(formatted_query.split())
+                    + "&limit=200"
+                    + "&page=b"
+                    + str(random_post_id)
+                )
+                print(full_url)
+                raw_data = await fetch_url(full_url)
+                if not raw_data:
+                    return
+
+                for x in raw_data:
+                    if all(elem in x["tag_string"] for elem in default_search_tags):
+                        filtered_data.append(x)
+                if filtered_data != []:
+                    break
+                else:
+                    print(filtered_data)
 
             data = random.choice(filtered_data)
             file_url = data.get("file_url")
-            if not file_url:
-                self.log.error("No file URL found in the Danbooru response.")
-                return None
+
+            id = data.get("id")
+            data_dict["danbooru_id"] = id
 
             return file_url
 
@@ -195,9 +239,7 @@ class QueryHandler:
         return None
 
     async def query_image_controller(
-        self,
-        query: str,
-        provider: str,
+        self, query: str, provider: str, data_dict: dict
     ) -> str:
         query_api_dict: dict = self.config.command["query_image"]
 
@@ -214,11 +256,19 @@ class QueryHandler:
                     continue
 
                 url = await self._query_image(
-                    query=query, provider=p, api_key=searx_instance_url
+                    query=query,
+                    provider=p,
+                    api_key=searx_instance_url,
+                    data_dict=data_dict,
                 )
             else:
                 api_key = query_api_dict.get(f"{p}_api_key", None)
-                url = await self._query_image(query=query, provider=p, api_key=api_key)
+                url = await self._query_image(
+                    query=query,
+                    provider=p,
+                    api_key=api_key,
+                    data_dict=data_dict,
+                )
 
             if url:
                 return url
