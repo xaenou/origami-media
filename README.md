@@ -5,6 +5,7 @@ The purpose of this maubot plugin is to process and display media for matrix ser
 ## Commands
 
 A basic overview of the current commands supported:
+
 - `!help`: Show this help message.
 - `!get [url]`: Retrieve media from a URL.
 - `!audio [url]`: Extract audio from a video. (Aliases: `!mp3`)
@@ -15,7 +16,7 @@ A basic overview of the current commands supported:
 - `!unsplash [query]`: Search for a stock image. (Aliases: `!stock`)
 - `!lexica [query]`: Search for an AI-generated image. (Aliases: `!lex`)
 - `!waifu`: Roll for a random Waifu. (Aliases: `!g`)
-- `!danbooru`: Roll for a random Waifu from Danbooru. (Aliases: `!gd`)
+- `!danbooru [optional tags]`: Roll for a random Waifu from Danbooru. (Aliases: `!gd`)
 
 **Note**: If passive URL detection is enabled, incoming messages are parsed for URLs and the `!get` command is applied to them.
 
@@ -24,32 +25,32 @@ A basic overview of the current commands supported:
 Here are some of the current features available:
 
 - **Advanced YTDLP Configuration**  
-  Configure cookies, proxies, user agents, preferred formats, and fallback formats for any platform added. 
-- **Dynamic Thumbnail Generation**    
+  Configure cookies, proxies, user agents, preferred formats, and fallback formats for any platform added.
+- **Dynamic Thumbnail Generation**  
   Thumbnails can be automatically created for media that lacks them.
 - **Livestream Previews**  
   Livestreams can be detected and handled by generating a preview of it via ffmpeg. The duration of the preview can be configured.
-- **Batch Processing**   
+- **Batch Processing**  
   Automatically process multiple URLs detected in a single post. Can be disabled.
 - **Configurable Constraints**  
-  Set limits on file size, video duration, and other parameters to optimize server resource usage.  
+  Set limits on file size, video duration, and other parameters to optimize server resource usage.
 - **Thumbnail Fallback**  
-  If a requested video violates preset constraints (e.g., max file size), its thumbnail can be posted with useful information.  
+  If a requested video violates preset constraints (e.g., max file size), its thumbnail can be posted with useful information.
 - **Media Standardization**  
   Convert media formats (e.g., WebM to MP4) for compatibility across different clients.
 - **Whitelist**  
   Add different platforms that should be processed.
 - **Custom Command Prefixes**  
   Use any prefix, not just `!`.
-- **Tweakable Concurrency**   
+- **Tweakable Concurrency**  
   Concurrency levels at various stages of the pipeline can be tweaked depending on the server's demands and resources.
 - **Event Queue**  
-  Validated commands can be buffered for processing to prevent overwhelming the server. Works hand-in-hand with the concurrency. 
+  Validated commands can be buffered for processing to prevent overwhelming the server. Works hand-in-hand with the concurrency.
 - **UX & Accessibility**  
-  Everything looks good and works well for different matrix clients. Helpful reactions appear to let users know that the bot is processing their requests. 
+  Everything looks good and works well for different matrix clients. Helpful reactions appear to let users know that the bot is processing their requests.
 - **Tracking Link Sanitization**  
   Automatically replace tracking links sent by users.
-- **Query APIs**   
+- **Query APIs**  
   API keys can be added for platforms like tenor, and then users can send queries to retrieve media such as gifs.
 - **Disable prefixed commands or automatic URL detection**  
   Maybe automatic URL detection in the chat isn't desired, or prefixed commands are not being used.

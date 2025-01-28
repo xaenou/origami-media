@@ -136,8 +136,10 @@ class CommandHandler:
                 else:
                     alias_text = ""
 
-                if command == "waifu" or command == "danbooru":
+                if command == "waifu":
                     arg_text = ""
+                elif command == "danbooru":
+                    arg_text = "[optional tags]"
                 elif details.type == CommandType.QUERY:
                     arg_text = "[query]"
                 elif details.type == CommandType.URL:

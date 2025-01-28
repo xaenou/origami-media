@@ -36,7 +36,6 @@ class QueryHandler:
                     headers["User-Agent"] = user_agent
 
             async with self.http.get(url, proxy=proxy, headers=headers) as response:
-                self.log.info(f"Response status: {response.status}")
                 if response.status != 200:
                     self.log.error(f"Failed request to {url}: {await response.text()}")
                     return None
@@ -135,11 +134,42 @@ class QueryHandler:
             return result.get("url")
 
         if provider == "danbooru":
-            base_url = f"https://danbooru.donmai.us/posts/random.json?tags=1girl+rating%3Ageneral+solo"
-            data = await fetch_url(base_url)
-            if not data:
+            base_url = f"https://danbooru.donmai.us/posts.json"
+            edge_post = await fetch_url(base_url)
+            if not edge_post:
+                return None
+            edge_post_id = edge_post[0].get("id")
+            if not edge_post_id:
+                return None
+            random_id = random.randrange(200, edge_post_id)
+
+            if not query:
+                query = ""
+            else:
+                query = "+" + query.replace(" ", "+").replace(":", "%3A")
+            full_url = (
+                base_url
+                + "?tags=rating%3Ag%2Cs"
+                + query
+                + "&limit=200"
+                + "&page=b"
+                + str(random_id)
+            )
+
+            raw_data = await fetch_url(full_url)
+            if not raw_data:
                 return None
 
+            filtered_data = []
+            for x in raw_data:
+                tag_string = x.get("tag_string", "")
+                tags = tag_string.split()
+                if "1girl" in tags and "solo" in tags:
+                    filtered_data.append(x)
+            if not filtered_data:
+                return None
+
+            data = random.choice(filtered_data)
             file_url = data.get("file_url")
             if not file_url:
                 self.log.error("No file URL found in the Danbooru response.")
