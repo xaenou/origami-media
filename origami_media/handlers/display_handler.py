@@ -93,7 +93,8 @@ class DisplayHandler:
                 else:
                     body = f"**Title:** {content_info.title}\n\n**Duration:** {duration_str}\n\n**Size:** {size_str}"
             elif "donmai" in content_info.url:
-                body = f"**Danbooru ID:** {additional_data['danbooru_id']}"
+                body = f"`{additional_data['post_url']}`"
+
             msgtype = message.MessageType.VIDEO
             media_info = VideoInfo(
                 mimetype=content_info.mimetype,
@@ -131,7 +132,7 @@ class DisplayHandler:
                         duration_str = f"{seconds} seconds"
                 body = f"**Title:** {content_info.title}\n\n**Duration:** {duration_str}\n\n**Platform:** {self._convert_extractor(content_info.extractor or "")}"
             elif "donmai" in content_info.url:
-                body = f"**Danbooru ID:** {additional_data['danbooru_id']}"
+                body = f"`{additional_data['post_url']}`"
 
             msgtype = message.MessageType.IMAGE
             media_info = ImageInfo(

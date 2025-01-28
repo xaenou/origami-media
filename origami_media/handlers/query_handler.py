@@ -217,7 +217,7 @@ class QueryHandler:
             file_url = data.get("file_url")
 
             id = data.get("id")
-            data_dict["danbooru_id"] = id
+            data_dict["post_url"] = f"https://danbooru.donmai.us/posts/{id}"
 
             return file_url
 
