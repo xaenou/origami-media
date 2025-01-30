@@ -151,10 +151,8 @@ class QueryHandler:
 
             if not query:
                 queries = []
-                date_query = None
             else:
                 queries = query.split()
-                date_query = None
 
                 for q in queries[:]:
                     if q.lower() == "-solo":
@@ -176,7 +174,7 @@ class QueryHandler:
                         )
                         if not date_post_old or not date_post:
                             return
-                        random_post_range[0] = date_post_old[1].get("id") + 200
+                        random_post_range[0] = date_post_old[1].get("id")
                         random_post_range[1] = date_post[1].get("id")
                         queries.remove(q)
 
@@ -191,7 +189,7 @@ class QueryHandler:
 
                 full_url = (
                     base_url
-                    + "?tags=rating%3Ageneral"
+                    + "?tags=rating%3Ag%2Cs"
                     + "+"
                     + "+".join(formatted_query.split())
                     + "&limit=200"
@@ -203,10 +201,13 @@ class QueryHandler:
                 raw_data = await fetch_url(full_url)
                 if raw_data:
                     for item in raw_data:
-                        if all(
-                            elem in item["tag_string"] for elem in default_search_tags
-                        ):
-                            filtered_data.append(item)
+                        post_id = item.get("id")
+                        if random_post_range[0] <= post_id <= random_post_range[1]:
+                            if all(
+                                elem in item["tag_string"]
+                                for elem in default_search_tags
+                            ):
+                                filtered_data.append(item)
 
                 if filtered_data:
                     break
