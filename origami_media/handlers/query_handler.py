@@ -137,7 +137,8 @@ class QueryHandler:
         if provider == "danbooru":
             base_url = "https://danbooru.donmai.us/posts.json"
             default_search_tags = ["1girl", "solo"]
-            attempts = 3
+            attempts = 4
+            page_types = ["b", "a"]
 
             edge_post = await fetch_url(base_url)
             if not edge_post:
@@ -155,17 +156,12 @@ class QueryHandler:
                 queries = query.split()
                 date_query = None
 
-                # Remove default tags
                 for q in queries[:]:
                     if q.lower() == "-solo":
-                        default_search_tags.remove(
-                            "solo",
-                        )
+                        default_search_tags.remove("solo")
                         queries.remove(q)
                     if q.lower() == "-1girl":
-                        default_search_tags.remove(
-                            "1girl",
-                        )
+                        default_search_tags.remove("1girl")
                         queries.remove(q)
 
                 for q in queries[:]:
@@ -187,37 +183,41 @@ class QueryHandler:
             formatted_query = urllib.parse.quote(" ".join(queries), safe="")
 
             filtered_data = []
-            for x in range(attempts):
+            for attempt in range(attempts):
+                page_type = page_types[attempt % 2]
                 random_post_id = random.randrange(
                     random_post_range[0], random_post_range[1]
                 )
+
                 full_url = (
                     base_url
                     + "?tags=rating%3Ageneral"
                     + "+"
                     + "+".join(formatted_query.split())
                     + "&limit=200"
-                    + "&page=b"
+                    + f"&page={page_type}"
                     + str(random_post_id)
                 )
-                print(full_url)
-                raw_data = await fetch_url(full_url)
-                if not raw_data:
-                    return
+                self.log.info(f"Attempt {attempt + 1}: Trying {full_url}")
 
-                for x in raw_data:
-                    if all(elem in x["tag_string"] for elem in default_search_tags):
-                        filtered_data.append(x)
-                if filtered_data != []:
+                raw_data = await fetch_url(full_url)
+                if raw_data:
+                    for item in raw_data:
+                        if all(
+                            elem in item["tag_string"] for elem in default_search_tags
+                        ):
+                            filtered_data.append(item)
+
+                if filtered_data:
                     break
-                else:
-                    print(filtered_data)
+
+            if not filtered_data:
+                return None
 
             data = random.choice(filtered_data)
             file_url = data.get("file_url")
-
-            id = data.get("id")
-            data_dict["post_url"] = f"https://danbooru.donmai.us/posts/{id}"
+            post_id = data.get("id")
+            data_dict["post_url"] = f"https://danbooru.donmai.us/posts/{post_id}"
 
             return file_url
 
