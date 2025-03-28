@@ -17,12 +17,12 @@ class UrlHandler:
         self.log = log
 
     DETECT_YOUTUBE_TRACKERS_SI = re.compile(
-        r"https?://(?:www\.)?(?:youtube\.com/(?:watch\?v=|shorts/|live/)|youtu\.be/)([a-zA-Z0-9_-]+).*?\?si=([a-zA-Z0-9_-]+)",
+        r"https?://(?:www\.|m\.)?(?:youtube\.com/(?:watch\?v=|shorts/|live/)|youtu\.be/)([a-zA-Z0-9_-]+).*?\?si=([a-zA-Z0-9_-]+)",
         re.IGNORECASE,
     )
 
     EXTRACT_YOUTUBE_VIDEO_ID = re.compile(
-        r"https?://(?:www\.)?(?:youtube\.com/(?:watch\?v=|shorts/|live/)|youtu\.be/)([a-zA-Z0-9_-]+)",
+        r"https?://(?:www\.|m\.)?(?:youtube\.com/(?:watch\?v=|shorts/|live/)|youtu\.be/)([a-zA-Z0-9_-]+)",
         re.IGNORECASE,
     )
 
